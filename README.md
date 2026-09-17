@@ -35,6 +35,14 @@ cp .env.example .env    # then fill in real values
 npm run start:dev
 ```
 
+Node is pinned with [Volta](https://volta.sh/) (`node` 24, `npm` 11) in
+`package.json`. With Volta installed the right versions are selected
+automatically; without it, use Node 24 or newer.
+
+NestJS 12 is published ESM-only, so the test scripts run Jest with
+`NODE_OPTIONS=--experimental-vm-modules`. Jest gates its `require(esm)`
+support on `vm.SourceTextModule`, which only exists under that flag.
+
 `JWT_SECRET` is required; the app refuses to start without it. See
 `.env.example` for every variable.
 
@@ -43,6 +51,11 @@ npm run start:dev
 ```bash
 docker compose up --build
 ```
+
+The image is built from `node:24-slim` in two stages rather than from a
+prebuilt puppeteer image. Chrome for Testing has no linux-arm64 build, so
+Chromium comes from Debian's own package and `PUPPETEER_EXECUTABLE_PATH`
+points at it.
 
 ## Scripts
 
