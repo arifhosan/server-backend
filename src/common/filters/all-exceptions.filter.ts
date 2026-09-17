@@ -9,6 +9,9 @@ import {
 import { Request, Response } from 'express';
 import { errorMessage, errorStack } from '@/common/utils/error.util';
 
+/** getStatus() returns a plain number, so compare against a number. */
+const SERVER_ERROR_THRESHOLD = 500;
+
 interface ErrorBody {
   statusCode: number;
   message: string;
@@ -42,7 +45,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
     };
 
-    if (status >= (HttpStatus.INTERNAL_SERVER_ERROR as number)) {
+    if (status >= SERVER_ERROR_THRESHOLD) {
       this.logger.error(
         `${request.method} ${request.url} -> ${status}`,
         errorStack(exception),
@@ -63,14 +66,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const payload = exception.getResponse();
       if (typeof payload === 'string') return payload;
       if (payload && typeof payload === 'object' && 'message' in payload) {
-        const { message } = payload as { message: unknown };
+        const { message } = payload;
         return Array.isArray(message)
           ? message.map(errorMessage).join(', ')
           : errorMessage(message);
       }
       return exception.message;
     }
-    return status === (HttpStatus.INTERNAL_SERVER_ERROR as number)
+    return status === SERVER_ERROR_THRESHOLD
       ? 'Internal server error'
       : 'Unexpected error';
   }
