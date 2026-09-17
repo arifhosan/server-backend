@@ -1,5 +1,5 @@
 import { TotalGameTime } from '@/database/entities/total-game-time.entity';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ExophaseScraper } from './scrapers/exophase.scraper';
 import { GameDTO } from './dto/game.dto';
@@ -8,9 +8,12 @@ import { Repository } from 'typeorm';
 import { Game } from '@/database/entities/game.entity';
 import { generateSlug } from '@/common/utils/slug.util';
 import { Playtime } from '@/database/entities/playtime.entity';
+import { errorStack } from '@/common/utils/error.util';
 
 @Injectable()
 export class ScrapingService {
+  private readonly logger = new Logger(ScrapingService.name);
+
   constructor(
     private readonly exophase: ExophaseScraper,
     @InjectRepository(Game) private readonly gameRepository: Repository<Game>,
@@ -81,8 +84,8 @@ export class ScrapingService {
       }
 
       return scrapedCount;
-    } catch (error: any) {
-      console.error('Error during scraping:', error);
+    } catch (error: unknown) {
+      this.logger.error('Scrape run failed', errorStack(error));
       return 0;
     }
   }

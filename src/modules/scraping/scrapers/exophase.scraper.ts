@@ -1,111 +1,118 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Injectable } from '@nestjs/common';
-import { SiteScraper } from './site-scraper.interface';
-import puppeteer, { Page } from 'puppeteer';
+import { Injectable, Logger } from '@nestjs/common';
+import puppeteer, { Browser, Page } from 'puppeteer';
 import { GameDTO } from '../dto/game.dto';
+import { SiteScraper } from './site-scraper.interface';
+import { errorMessage } from '@/common/utils/error.util';
+
+const PROFILE_URL = 'https://www.exophase.com/user/arifhosan';
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.75 Safari/537.36';
+const GAME_CARD_SELECTOR = '.col.col-game.game-info.pe-3';
+
+const SCROLL_STEP_PX = 50000;
+const SCROLL_PAUSE_MS = 3000;
+const SCROLL_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class ExophaseScraper implements SiteScraper {
-  private readonly baseUrl: string = 'https://www.exophase.com/user/arifhosan';
+  private readonly logger = new Logger(ExophaseScraper.name);
 
   async scrape(): Promise<GameDTO[]> {
+    let browser: Browser | undefined;
+
     try {
-      const browser = await puppeteer.launch({
+      browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
 
       const page = await browser.newPage();
-      await page.setUserAgent(
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.75 Safari/537.36',
-      );
+      await page.setUserAgent(USER_AGENT);
       await page.setViewport({ width: 1080, height: 1024 });
-      await page.goto(this.baseUrl);
-      await scrollUntilEnd(page);
+      await page.goto(PROFILE_URL);
+      await this.scrollUntilEnd(page);
 
-      const gameInfo = await page.evaluate(() => {
-        const games: GameDTO[] = [];
-        const gameElements = document.querySelectorAll(
-          '.col.col-game.game-info.pe-3',
-        );
+      const games = await this.extractGames(page);
+      this.logger.log(`Extracted ${games.length} games from Exophase`);
+      return games;
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      this.logger.error(`Exophase scrape failed: ${message}`);
+      throw new Error(`Error scraping site: ${message}`);
+    } finally {
+      // The original closed the browser only on the happy path, leaking a
+      // Chromium process on every failure.
+      await browser?.close();
+    }
+  }
 
-        gameElements.forEach((el) => {
-          const title = el.querySelector('h3 a')?.textContent?.trim(); // Extract the game title
-          const link = el.querySelector('h3 a')?.getAttribute('href'); // Extract the game link
-          const playtimeText = el.querySelector('.hours')?.textContent?.trim(); // Extract the playtime text
-          const platform = el
-            .querySelector('.platforms span')
-            ?.textContent?.trim();
+  private extractGames(page: Page): Promise<GameDTO[]> {
+    return page.evaluate((selector: string): GameDTO[] => {
+      const games: GameDTO[] = [];
 
-          if (title && playtimeText) {
-            const timeMatch = playtimeText.match(/(\d+)h (\d+)m/);
-            if (timeMatch) {
-              const hours = parseInt(timeMatch[1], 10);
-              const minutes = parseInt(timeMatch[2], 10);
-              const playtimeMs = (hours * 60 + minutes) * 60; // Convert to milliseconds
-              games.push({
-                title,
-                link,
-                playtimeMs,
-                platform,
-                slug: '',
-              });
-            }
-          }
+      document.querySelectorAll(selector).forEach((el) => {
+        const anchor = el.querySelector('h3 a');
+        const title = anchor?.textContent?.trim();
+        const playtimeText = el.querySelector('.hours')?.textContent?.trim();
+        if (!title || !playtimeText) return;
+
+        const match = playtimeText.match(/(\d+)h (\d+)m/);
+        if (!match) return;
+
+        const hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+
+        games.push({
+          title,
+          link: anchor?.getAttribute('href') ?? '',
+          // NOTE: despite the name, this value is SECONDS, not milliseconds.
+          // The column and DTO field were never renamed; every stored row
+          // and consumer assumes seconds, so the arithmetic is left as-is.
+          playtimeMs: (hours * 60 + minutes) * 60,
+          platform:
+            el.querySelector('.platforms span')?.textContent?.trim() ?? '',
+          slug: '',
         });
-        return games;
       });
-      await browser.close();
-      return gameInfo;
-    } catch (error) {
-      console.error('Error scraping site:', error);
-      throw new Error('Error scraping site: ' + error.message);
-    }
 
-    async function delay(ms: number): Promise<void> {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
+      return games;
+    }, GAME_CARD_SELECTOR);
+  }
 
-    async function scrollUntilEnd(
-      page: Page,
-      pause = 3000,
-      step = 50000,
-    ): Promise<void> {
-      let previousHeight = await page.evaluate(
+  /**
+   * Exophase loads the game list lazily, so scroll until the page stops
+   * growing or stops responding.
+   */
+  private async scrollUntilEnd(page: Page): Promise<void> {
+    let previousHeight = await page.evaluate(() => document.body.scrollHeight);
+
+    for (;;) {
+      await page.evaluate(
+        (step: number) => window.scrollBy(0, step),
+        SCROLL_STEP_PX,
+      );
+      await new Promise((resolve) => setTimeout(resolve, SCROLL_PAUSE_MS));
+
+      const grew = await page
+        .waitForFunction(`document.body.scrollHeight > ${previousHeight}`, {
+          timeout: SCROLL_TIMEOUT_MS,
+        })
+        .catch(() => false);
+
+      if (!grew) {
+        this.logger.debug('Scroll stopped: no new content loaded');
+        return;
+      }
+
+      const currentHeight = await page.evaluate(
         () => document.body.scrollHeight,
       );
-
-      while (true) {
-        await page.evaluate((step) => window.scrollBy(0, step), step);
-        await delay(pause);
-        const contentLoaded = await page
-          .waitForFunction(
-            `document.body.scrollHeight > ${previousHeight}`,
-            { timeout: 5000 }, // Adjust timeout if needed
-          )
-          .catch(() => false); // If no content loaded, catch the timeout and break out of loop
-
-        if (!contentLoaded) {
-          console.log('[Scroll] No new content loaded. Breaking out of loop.');
-          break; // No more content loaded or network timeout
-        }
-        const currentHeight = await page.evaluate(
-          () => document.body.scrollHeight,
-        );
-
-        if (currentHeight === previousHeight) {
-          console.log(
-            '[Scroll] No more content to load. Current height:',
-            currentHeight,
-          );
-          break; // no more content loaded
-        }
-
-        previousHeight = currentHeight;
+      if (currentHeight === previousHeight) {
+        this.logger.debug(`Scroll stopped at height ${currentHeight}`);
+        return;
       }
+
+      previousHeight = currentHeight;
     }
   }
 }
