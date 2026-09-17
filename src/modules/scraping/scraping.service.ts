@@ -77,8 +77,8 @@ export class ScrapingService {
           existing.totalMs += dailyTotalDelta;
           await this.playtimeRepository.save(existing);
         } else {
-          console.log(
-            `[Cron] Skipped Playtime update — already updated today (${today}).`,
+          this.logger.log(
+            `Skipped playtime update, already recorded today (${today}).`,
           );
         }
       }
