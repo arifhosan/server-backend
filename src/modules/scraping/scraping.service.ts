@@ -1,18 +1,18 @@
-import { TotalGameTime } from '@/database/entities/totalGameTime.entity';
+import { TotalGameTime } from '@/database/entities/total-game-time.entity';
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ExophaseScrapper } from './sites/exophase.scraper';
-import { GameDTO } from './sites/game.dto';
+import { ExophaseScraper } from './scrapers/exophase.scraper';
+import { GameDTO } from './dto/game.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Game } from '@/database/entities/game.entity';
-import { generateSlug } from '@/utils/slug.util';
+import { generateSlug } from '@/common/utils/slug.util';
 import { Playtime } from '@/database/entities/playtime.entity';
 
 @Injectable()
 export class ScrapingService {
   constructor(
-    private readonly exophase: ExophaseScrapper,
+    private readonly exophase: ExophaseScraper,
     @InjectRepository(Game) private readonly gameRepository: Repository<Game>,
     @InjectRepository(TotalGameTime)
     private readonly totalGameTimeRepository: Repository<TotalGameTime>,

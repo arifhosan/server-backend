@@ -2,10 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Game } from '@/database/entities/game.entity';
 import { Playtime } from '@/database/entities/playtime.entity';
-import { TotalGameTime } from '@/database/entities/totalGameTime.entity';
+import { TotalGameTime } from '@/database/entities/total-game-time.entity';
 import { ScrapingService } from './scraping.service';
-import { ExophaseScrapper } from './sites/exophase.scraper';
-import { GameDTO } from './sites/game.dto';
+import { ExophaseScraper } from './scrapers/exophase.scraper';
+import { GameDTO } from './dto/game.dto';
 
 const game = (overrides: Partial<GameDTO> = {}): GameDTO => ({
   title: 'Hollow Knight',
@@ -38,7 +38,7 @@ describe('ScrapingService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScrapingService,
-        { provide: ExophaseScrapper, useValue: exophase },
+        { provide: ExophaseScraper, useValue: exophase },
         { provide: getRepositoryToken(Game), useValue: gameRepo },
         { provide: getRepositoryToken(TotalGameTime), useValue: totalRepo },
         { provide: getRepositoryToken(Playtime), useValue: playtimeRepo },

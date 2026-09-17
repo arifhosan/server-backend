@@ -3,12 +3,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
-import { SiteScraper } from './site.scrapper.interface';
+import { SiteScraper } from './site-scraper.interface';
 import puppeteer, { Page } from 'puppeteer';
-import { GameDTO } from './game.dto';
+import { GameDTO } from '../dto/game.dto';
 
 @Injectable()
-export class ExophaseScrapper implements SiteScraper {
+export class ExophaseScraper implements SiteScraper {
   private readonly baseUrl: string = 'https://www.exophase.com/user/arifhosan';
 
   async scrape(): Promise<GameDTO[]> {
