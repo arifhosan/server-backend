@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -8,7 +9,13 @@ import { ScrapingModule } from './modules/scraping/scraping.module';
 import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
-  imports: [CacheModule.register(), DatabaseModule, ScrapingModule, AuthModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    CacheModule.register(),
+    DatabaseModule,
+    ScrapingModule,
+    AuthModule,
+  ],
   controllers: [AppController, HaController],
   providers: [AppService],
 })

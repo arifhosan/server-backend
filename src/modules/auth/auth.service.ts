@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-
 import {
   Injectable,
   ConflictException,
@@ -11,22 +9,32 @@ import { User } from '@/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { JwtPayload, LoginResult, PublicUser } from './types/auth.types';
 import * as bcrypt from 'bcrypt';
+
+const BCRYPT_ROUNDS = 10;
+
+const toPublicUser = (user: User): PublicUser => ({
+  id: user.id,
+  email: user.email,
+  firstName: user.firstName,
+  lastName: user.lastName,
+});
 
 @Injectable()
 export class AuthService {
   constructor(
-    private jwtService: JwtService,
-    @InjectRepository(User) private userRepo: Repository<User>,
+    private readonly jwtService: JwtService,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto): Promise<PublicUser> {
     const existing = await this.userRepo.findOneBy({ email: dto.email });
     if (existing) {
       throw new ConflictException('Email already registered');
     }
 
-    const hashed = await bcrypt.hash(dto.password, 10);
+    const hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = this.userRepo.create({
       firstName: dto.firstName,
       lastName: dto.lastName,
@@ -34,10 +42,12 @@ export class AuthService {
       password: hashed,
     });
 
-    return this.userRepo.save(user);
+    // Returning the saved entity directly would put the bcrypt hash in the
+    // HTTP response.
+    return toPublicUser(await this.userRepo.save(user));
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto): Promise<LoginResult> {
     const user = await this.userRepo.findOneBy({ email: dto.email });
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
@@ -51,9 +61,9 @@ export class AuthService {
     return { access_token: token, user: { id: user.id, email: user.email } };
   }
 
-  async verify(token: string) {
+  async verify(token: string): Promise<{ user: LoginResult['user'] }> {
     try {
-      const payload = this.jwtService.verify(token);
+      const payload = this.jwtService.verify<JwtPayload>(token);
       const user = await this.userRepo.findOneBy({ id: payload.sub });
       if (!user) {
         throw new UnauthorizedException('User not found');

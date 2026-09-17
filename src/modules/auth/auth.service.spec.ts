@@ -70,6 +70,24 @@ describe('AuthService', () => {
         bcrypt.compare(dto.password, created.password),
       ).resolves.toBe(true);
     });
+
+    it('never returns the password hash', async () => {
+      userRepo.findOneBy.mockResolvedValue(null);
+      userRepo.create.mockImplementation((v: Partial<User>) => v);
+      userRepo.save.mockImplementation((v: Partial<User>) =>
+        Promise.resolve({ id: 7, ...v }),
+      );
+
+      const result = await service.register(dto);
+
+      expect(result).toEqual({
+        id: 7,
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+      });
+      expect(result).not.toHaveProperty('password');
+    });
   });
 
   describe('login', () => {
