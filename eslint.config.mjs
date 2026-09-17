@@ -26,10 +26,13 @@ export default tseslint.config(
   },
   {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
+      // These were relaxed to accommodate untyped code that no longer exists.
+      // A floating promise or an unsafe `any` is a real defect here, so they
+      // fail the build rather than printing a warning nobody reads.
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
     },
   },
 );

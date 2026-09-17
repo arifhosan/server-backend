@@ -8,13 +8,13 @@ import { AuthService } from './auth.service';
 
 interface MockUserRepo {
   findOneBy: jest.Mock;
-  create: jest.Mock;
+  create: jest.Mock<Partial<User>, [Partial<User>]>;
   save: jest.Mock;
 }
 
 const createMockRepo = (): MockUserRepo => ({
   findOneBy: jest.fn(),
-  create: jest.fn(),
+  create: jest.fn<Partial<User>, [Partial<User>]>(),
   save: jest.fn(),
 });
 
@@ -64,11 +64,10 @@ describe('AuthService', () => {
 
       await service.register(dto);
 
-      const created = userRepo.create.mock.calls[0][0] as User;
-      expect(created.password).not.toBe(dto.password);
-      await expect(
-        bcrypt.compare(dto.password, created.password),
-      ).resolves.toBe(true);
+      const [created] = userRepo.create.mock.calls[0];
+      const hash = created.password ?? '';
+      expect(hash).not.toBe(dto.password);
+      await expect(bcrypt.compare(dto.password, hash)).resolves.toBe(true);
     });
 
     it('never returns the password hash', async () => {
