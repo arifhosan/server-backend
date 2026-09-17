@@ -4,7 +4,7 @@ import {
   Column,
   CreateDateColumn,
 } from 'typeorm';
-import { bigintTransformer } from '../transformers/bigint.transformer';
+import { bigintTransformer } from '@/database/transformers/bigint.transformer';
 
 @Entity()
 export class Game {

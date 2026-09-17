@@ -1,4 +1,4 @@
-import { User } from '@/database/entities/user.entity';
+import { User } from './entities/user.entity';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';

@@ -4,15 +4,21 @@ import {
   Column,
   UpdateDateColumn,
 } from 'typeorm';
-import { bigintTransformer } from '../transformers/bigint.transformer';
+import { bigintTransformer } from '@/database/transformers/bigint.transformer';
 
 @Entity()
-export class Playtime {
+export class TotalGameTime {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ unique: true })
+  slug: string;
+
   @Column()
-  date: string; // 'YYYY-MM-DD'
+  title: string;
+
+  @Column()
+  platform: string;
 
   @Column({ type: 'bigint', transformer: bigintTransformer })
   totalMs: number;

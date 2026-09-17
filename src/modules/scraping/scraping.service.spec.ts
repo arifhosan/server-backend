@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Game } from '@/database/entities/game.entity';
-import { Playtime } from '@/database/entities/playtime.entity';
-import { TotalGameTime } from '@/database/entities/total-game-time.entity';
+import { Game } from './entities/game.entity';
+import { Playtime } from './entities/playtime.entity';
+import { TotalGameTime } from './entities/total-game-time.entity';
 import { ScrapingService } from './scraping.service';
 import { SITE_SCRAPER } from './scrapers/site-scraper.interface';
 import { GameDTO } from './dto/game.dto';

@@ -1,13 +1,13 @@
-import { TotalGameTime } from '@/database/entities/total-game-time.entity';
+import { TotalGameTime } from './entities/total-game-time.entity';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SITE_SCRAPER, SiteScraper } from './scrapers/site-scraper.interface';
 import { GameDTO } from './dto/game.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Game } from '@/database/entities/game.entity';
-import { generateSlug } from '@/common/utils/slug.util';
-import { Playtime } from '@/database/entities/playtime.entity';
+import { Game } from './entities/game.entity';
+import { generateSlug } from './utils/slug.util';
+import { Playtime } from './entities/playtime.entity';
 import { errorStack } from '@/common/utils/error.util';
 
 @Injectable()

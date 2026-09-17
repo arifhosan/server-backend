@@ -17,15 +17,38 @@ The `test` prefix is historical. It is kept so existing callers keep working.
 
 ## Layout
 
+This repo is one deployable serving several **unrelated** sub-projects. Each
+folder under `src/modules/` is self-contained and owns everything only it uses -
+its entities, DTOs, helpers, types. There is deliberately no shared `services/`
+or `entities/` folder collecting unrelated things.
+
 ```
 src/
-  common/        filters and helpers shared across modules
-  database/      TypeORM entities, transformers and connection config
-  modules/       one folder per feature (controller, service, dto, ...)
+  common/        genuinely cross-cutting: exception filter, error helpers
+  database/      the connection itself, and column transformers
+  modules/
+    auth/        controller, service, dto/, entities/, types/
+    ha/
+    scraping/    controller, service, dto/, entities/, scrapers/, utils/
   main.ts        bootstrap: CORS, validation pipe, exception filter
 ```
 
-Imports use the `@/` alias for `src/`, e.g. `import { User } from '@/database/entities/user.entity'`.
+**Modules must not import each other.** A module may use `src/common` and
+`src/database`; reaching into a sibling is a lint error
+(`boundaries/no-cross-module-import` in `eslint.config.mjs`). If two modules
+genuinely need the same thing, it belongs in `src/common` or `src/database`.
+
+Within a module, imports are relative (`./entities/user.entity`). The `@/` alias
+is for shared infrastructure only (`@/common/...`, `@/database/...`).
+
+### Adding a sub-project
+
+1. Create `src/modules/<name>/` with its own `<name>.module.ts`.
+2. Keep its entities in `src/modules/<name>/entities/` and register them with
+   `TypeOrmModule.forFeature([...])`. `autoLoadEntities` picks them up, so no
+   central registry needs editing.
+3. Import the module in `src/app.module.ts`. That is the only shared file a new
+   sub-project touches.
 
 ## Getting started
 
