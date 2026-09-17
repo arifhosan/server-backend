@@ -38,7 +38,7 @@ export class ExophaseScraper implements SiteScraper {
     } catch (error: unknown) {
       const message = errorMessage(error);
       this.logger.error(`Exophase scrape failed: ${message}`);
-      throw new Error(`Error scraping site: ${message}`);
+      throw new Error(`Error scraping site: ${message}`, { cause: error });
     } finally {
       // The original closed the browser only on the happy path, leaking a
       // Chromium process on every failure.

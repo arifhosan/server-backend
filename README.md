@@ -78,6 +78,10 @@ points at it.
   consumer assumes seconds; treat the name as historical.
 - **The `utilities` table is orphaned.** Its module was removed; the table was
   left in place. Drop it manually if the data is not worth keeping.
+- **TypeORM 1.x has not been exercised against MySQL here.** The upgrade
+  compiles, wires up and passes the unit tests, but those use mocked
+  repositories. Run `docker compose up -d database && npm run test:e2e`
+  against a real database before deploying.
 - **`HaController` disables TLS verification** via `rejectUnauthorized: false`.
   The ASEAG endpoint is plain HTTP so the agent is unused today, but this would
   matter if the host ever redirects to HTTPS.
