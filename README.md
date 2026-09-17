@@ -75,10 +75,11 @@ support on `vm.SourceTextModule`, which only exists under that flag.
 docker compose up --build
 ```
 
-The image is built from `node:24-slim` in two stages rather than from a
-prebuilt puppeteer image. Chrome for Testing has no linux-arm64 build, so
-Chromium comes from Debian's own package and `PUPPETEER_EXECUTABLE_PATH`
-points at it.
+The image is built from `node:24-slim` (Debian bookworm) in two stages rather
+than from a prebuilt puppeteer image. Chrome for Testing has no linux-arm64
+build, so Chromium comes from Debian's own package (152.x, one major from the
+Chrome 153 puppeteer pins) and `PUPPETEER_EXECUTABLE_PATH` points at it. The app
+runs as a non-root user with `dumb-init` as PID 1.
 
 ## Scripts
 
@@ -101,10 +102,6 @@ points at it.
   consumer assumes seconds; treat the name as historical.
 - **The `utilities` table is orphaned.** Its module was removed; the table was
   left in place. Drop it manually if the data is not worth keeping.
-- **TypeORM 1.x has not been exercised against MySQL here.** The upgrade
-  compiles, wires up and passes the unit tests, but those use mocked
-  repositories. Run `docker compose up -d database && npm run test:e2e`
-  against a real database before deploying.
 - **`HaController` disables TLS verification** via `rejectUnauthorized: false`.
   The ASEAG endpoint is plain HTTP so the agent is unused today, but this would
   matter if the host ever redirects to HTTPS.
