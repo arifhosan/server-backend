@@ -4,7 +4,7 @@ import { Game } from '@/database/entities/game.entity';
 import { Playtime } from '@/database/entities/playtime.entity';
 import { TotalGameTime } from '@/database/entities/total-game-time.entity';
 import { ScrapingService } from './scraping.service';
-import { ExophaseScraper } from './scrapers/exophase.scraper';
+import { SITE_SCRAPER } from './scrapers/site-scraper.interface';
 import { GameDTO } from './dto/game.dto';
 
 const game = (overrides: Partial<GameDTO> = {}): GameDTO => ({
@@ -38,7 +38,7 @@ describe('ScrapingService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScrapingService,
-        { provide: ExophaseScraper, useValue: exophase },
+        { provide: SITE_SCRAPER, useValue: exophase },
         { provide: getRepositoryToken(Game), useValue: gameRepo },
         { provide: getRepositoryToken(TotalGameTime), useValue: totalRepo },
         { provide: getRepositoryToken(Playtime), useValue: playtimeRepo },
