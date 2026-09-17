@@ -3,7 +3,12 @@
   "compilerOptions": {
     // TypeScript 6 requires rootDir to be explicit. Set here rather than in
     // the base config so the e2e tests under test/ still typecheck.
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Keep the incremental cache inside outDir. Left at its default it lands
+    // in the project root, survives the CLI's deleteOutDir, and tsc then skips
+    // emitting entirely while still exiting 0 - a build that silently does
+    // nothing.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
 }
