@@ -11,9 +11,7 @@ game playtime.
 | ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
 | `auth`     | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify` | Registration and JWT issuing/verification. |
 | `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
-| `scraping` | `GET /test`, `GET /test/games`    | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.           |
-
-The `test` prefix is historical. It is kept so existing callers keep working.
+| `scraping` | `GET /scraping`, `GET /scraping/games` | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.      |
 
 ## Layout
 

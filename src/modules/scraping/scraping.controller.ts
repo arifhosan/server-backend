@@ -4,9 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ScrapingService } from './scraping.service';
 
-// NOTE: the 'test' prefix is historical and kept so existing callers keep
-// working. Rename to 'scraping' once nothing depends on these paths.
-@Controller('test')
+@Controller('scraping')
 export class ScrapingController {
   private readonly logger = new Logger(ScrapingController.name);
 
