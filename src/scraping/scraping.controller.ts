@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ScrapingService } from './scraping.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Game } from 'src/database/entities/game.entity';
+import { Game } from '@/database/entities/game.entity';
 
 @Controller('test')
 export class ScrapingController {
