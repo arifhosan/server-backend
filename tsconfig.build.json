@@ -1,4 +1,9 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // TypeScript 6 requires rootDir to be explicit. Set here rather than in
+    // the base config so the e2e tests under test/ still typecheck.
+    "rootDir": "./src"
+  },
   "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
 }
