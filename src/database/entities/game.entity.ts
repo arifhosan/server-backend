@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
 } from 'typeorm';
+import { bigintTransformer } from '../transformers/bigint.transformer';
 
 @Entity()
 export class Game {
@@ -16,7 +17,9 @@ export class Game {
   @Column({ default: '' })
   link: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'bigint', transformer: bigintTransformer })
+  // NOTE: holds SECONDS, not milliseconds. The scraper has always written
+  // seconds and the column was never renamed; treat the name as historical.
   playtimeMs: number;
 
   @Column({ default: '' })

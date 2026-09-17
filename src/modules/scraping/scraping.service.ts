@@ -48,7 +48,7 @@ export class ScrapingService {
         });
 
         if (total) {
-          total.totalMs = Number(total.totalMs) + deltaMs;
+          total.totalMs = total.totalMs + deltaMs;
           await this.totalGameTimeRepository.save(total);
         } else {
           await this.totalGameTimeRepository.save({
