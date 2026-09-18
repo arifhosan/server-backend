@@ -115,9 +115,37 @@ describe('ScrapingService', () => {
     });
   });
 
-  it('does not touch the daily total twice on the same day', async () => {
+  // A re-run must keep the daily total in step with the Game rows it writes.
+  it('adds a later run of the same day onto the existing daily total', async () => {
+    const existing = {
+      date: new Date().toISOString().split('T')[0],
+      totalMs: 1000,
+      updatedAt: new Date(),
+    };
+    exophase.scrape.mockResolvedValue([game({ playtimeMs: 8000 })]);
+    totalRepo.findOneBy.mockResolvedValue({
+      slug: 'hollow-knightsteam',
+      totalMs: 5000,
+    });
+    playtimeRepo.findOneBy.mockResolvedValue(existing);
+
+    await service.scrapeData();
+
+    // 3000 recorded against the game, so the same 3000 lands on the day.
+    expect(gameRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ playtimeMs: 3000 }),
+    );
+    expect(playtimeRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ totalMs: 4000 }),
+    );
+  });
+
+  it('leaves the daily total alone when a re-run finds no new playtime', async () => {
     exophase.scrape.mockResolvedValue([game({ playtimeMs: 5000 })]);
-    totalRepo.findOneBy.mockResolvedValue(null);
+    totalRepo.findOneBy.mockResolvedValue({
+      slug: 'hollow-knightsteam',
+      totalMs: 5000,
+    });
     playtimeRepo.findOneBy.mockResolvedValue({
       date: new Date().toISOString().split('T')[0],
       totalMs: 1000,

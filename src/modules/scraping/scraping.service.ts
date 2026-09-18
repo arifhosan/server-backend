@@ -63,23 +63,20 @@ export class ScrapingService {
         scrapedCount++;
       }
 
+      // Safe to repeat: the delta excludes playtime already counted, and zero never gets here.
       if (dailyTotalDelta > 0) {
         const existing = await this.playtimeRepository.findOneBy({
           date: today,
         });
 
-        if (!existing) {
+        if (existing) {
+          existing.totalMs += dailyTotalDelta;
+          await this.playtimeRepository.save(existing);
+        } else {
           await this.playtimeRepository.save({
             date: today,
             totalMs: dailyTotalDelta,
           });
-        } else if (existing.updatedAt.toISOString().split('T')[0] !== today) {
-          existing.totalMs += dailyTotalDelta;
-          await this.playtimeRepository.save(existing);
-        } else {
-          this.logger.log(
-            `Skipped playtime update, already recorded today (${today}).`,
-          );
         }
       }
 
