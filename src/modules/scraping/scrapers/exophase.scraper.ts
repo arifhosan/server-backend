@@ -3,6 +3,7 @@ import puppeteer, { Browser, Page } from 'puppeteer';
 import { GameDTO } from '../dto/game.dto';
 import { SiteScraper } from './site-scraper.interface';
 import { errorMessage } from '@/common/utils/error.util';
+import { parsePlaytimeSeconds } from '../utils/playtime.util';
 
 const PROFILE_URL = 'https://www.exophase.com/user/arifhosan';
 const USER_AGENT =
@@ -12,6 +13,14 @@ const GAME_CARD_SELECTOR = '.col.col-game.game-info.pe-3';
 const SCROLL_STEP_PX = 50000;
 const SCROLL_PAUSE_MS = 3000;
 const SCROLL_TIMEOUT_MS = 5000;
+
+/** Raw card text. Parsed in Node rather than page.evaluate, so it can be tested. */
+interface RawGameRow {
+  title: string;
+  link: string;
+  platform: string;
+  playtimeText: string;
+}
 
 @Injectable()
 export class ExophaseScraper implements SiteScraper {
@@ -40,15 +49,48 @@ export class ExophaseScraper implements SiteScraper {
       this.logger.error(`Exophase scrape failed: ${message}`);
       throw new Error(`Error scraping site: ${message}`, { cause: error });
     } finally {
-      // The original closed the browser only on the happy path, leaking a
-      // Chromium process on every failure.
+      // Not on the happy path only: a failure used to leak a Chromium process.
       await browser?.close();
     }
   }
 
-  private extractGames(page: Page): Promise<GameDTO[]> {
-    return page.evaluate((selector: string): GameDTO[] => {
-      const games: GameDTO[] = [];
+  private async extractGames(page: Page): Promise<GameDTO[]> {
+    const rows = await this.extractRows(page);
+
+    const games: GameDTO[] = [];
+    const unreadable: string[] = [];
+
+    for (const row of rows) {
+      const playtimeSeconds = parsePlaytimeSeconds(row.playtimeText);
+
+      // Dropped, not counted as zero, so the game keeps the total it has.
+      if (playtimeSeconds === null) {
+        unreadable.push(`${row.title}: '${row.playtimeText}'`);
+        continue;
+      }
+
+      games.push({
+        title: row.title,
+        link: row.link,
+        // Despite the name this is SECONDS; every stored row assumes seconds.
+        playtimeMs: playtimeSeconds,
+        platform: row.platform,
+        slug: '',
+      });
+    }
+
+    if (unreadable.length > 0) {
+      this.logger.warn(
+        `Skipped ${unreadable.length} card(s) with an unreadable playtime: ${unreadable.join(', ')}`,
+      );
+    }
+
+    return games;
+  }
+
+  private extractRows(page: Page): Promise<RawGameRow[]> {
+    return page.evaluate((selector: string): RawGameRow[] => {
+      const rows: RawGameRow[] = [];
 
       document.querySelectorAll(selector).forEach((el) => {
         const anchor = el.querySelector('h3 a');
@@ -56,33 +98,20 @@ export class ExophaseScraper implements SiteScraper {
         const playtimeText = el.querySelector('.hours')?.textContent?.trim();
         if (!title || !playtimeText) return;
 
-        const match = playtimeText.match(/(\d+)h (\d+)m/);
-        if (!match) return;
-
-        const hours = parseInt(match[1], 10);
-        const minutes = parseInt(match[2], 10);
-
-        games.push({
+        rows.push({
           title,
           link: anchor?.getAttribute('href') ?? '',
-          // NOTE: despite the name, this value is SECONDS, not milliseconds.
-          // The column and DTO field were never renamed; every stored row
-          // and consumer assumes seconds, so the arithmetic is left as-is.
-          playtimeMs: (hours * 60 + minutes) * 60,
           platform:
             el.querySelector('.platforms span')?.textContent?.trim() ?? '',
-          slug: '',
+          playtimeText,
         });
       });
 
-      return games;
+      return rows;
     }, GAME_CARD_SELECTOR);
   }
 
-  /**
-   * Exophase loads the game list lazily, so scroll until the page stops
-   * growing or stops responding.
-   */
+  /** The list loads lazily, so scroll until the page stops growing or responding. */
   private async scrollUntilEnd(page: Page): Promise<void> {
     let previousHeight = await page.evaluate(() => document.body.scrollHeight);
 
