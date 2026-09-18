@@ -6,12 +6,21 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "incremental": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "strict": true,
+    // TypeORM entities and DTOs are populated by the ORM and the validation
+    // pipe, never through a constructor, so initializer checks do not apply.
+    "strictPropertyInitialization": false,
+    "noImplicitOverride": true,
+    "types": ["node", "jest"]
   }
 }

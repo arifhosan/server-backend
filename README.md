@@ -1,98 +1,105 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# server-backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Personal API backend built with [NestJS](https://nestjs.com/) and TypeORM/MySQL.
+It exposes a few unrelated endpoints used by personal projects: JWT auth, a
+Home Assistant proxy for local bus times, and a nightly scraper that tracks
+game playtime.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Modules
 
-## Description
+| Module     | Routes                            | What it does                                                                 |
+| ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| `auth`     | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify` | Registration and JWT issuing/verification. |
+| `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
+| `scraping` | `GET /scraping`, `GET /scraping/games` | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.      |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Layout
 
-## Project setup
+This repo is one deployable serving several **unrelated** sub-projects. Each
+folder under `src/modules/` is self-contained and owns everything only it uses -
+its entities, DTOs, helpers, types. There is deliberately no shared `services/`
+or `entities/` folder collecting unrelated things.
 
-```bash
-$ npm install
+```
+src/
+  common/        genuinely cross-cutting: exception filter, error helpers
+  database/      the connection itself, and column transformers
+  modules/
+    auth/        controller, service, dto/, entities/, types/
+    ha/
+    scraping/    controller, service, dto/, entities/, scrapers/, utils/
+  main.ts        bootstrap: CORS, validation pipe, exception filter
 ```
 
-## Compile and run the project
+**Modules must not import each other.** A module may use `src/common` and
+`src/database`; reaching into a sibling is a lint error
+(`boundaries/no-cross-module-import` in `eslint.config.mjs`). If two modules
+genuinely need the same thing, it belongs in `src/common` or `src/database`.
+
+Within a module, imports are relative (`./entities/user.entity`). The `@/` alias
+is for shared infrastructure only (`@/common/...`, `@/database/...`).
+
+### Adding a sub-project
+
+1. Create `src/modules/<name>/` with its own `<name>.module.ts`.
+2. Keep its entities in `src/modules/<name>/entities/` and register them with
+   `TypeOrmModule.forFeature([...])`. `autoLoadEntities` picks them up, so no
+   central registry needs editing.
+3. Import the module in `src/app.module.ts`. That is the only shared file a new
+   sub-project touches.
+
+## Getting started
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm ci
+cp .env.example .env    # then fill in real values
+npm run start:dev
 ```
 
-## Run tests
+Node is pinned with [Volta](https://volta.sh/) (`node` 24, `npm` 11) in
+`package.json`. With Volta installed the right versions are selected
+automatically; without it, use Node 24 or newer.
+
+NestJS 12 is published ESM-only, so the test scripts run Jest with
+`NODE_OPTIONS=--experimental-vm-modules`. Jest gates its `require(esm)`
+support on `vm.SourceTextModule`, which only exists under that flag.
+
+`JWT_SECRET` is required; the app refuses to start without it. See
+`.env.example` for every variable.
+
+### Docker
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose up --build
 ```
 
-## Deployment
+The image is built from `node:24-slim` (Debian bookworm) in two stages rather
+than from a prebuilt puppeteer image. Chrome for Testing has no linux-arm64
+build, so Chromium comes from Debian's own package (152.x, one major from the
+Chrome 153 puppeteer pins) and `PUPPETEER_EXECUTABLE_PATH` points at it. The app
+runs as a non-root user with `dumb-init` as PID 1.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Scripts
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Command             | Purpose                        |
+| ------------------- | ------------------------------ |
+| `npm run build`     | Compile to `dist/`             |
+| `npm run start:dev` | Watch mode                     |
+| `npm test`          | Unit tests                     |
+| `npm run test:e2e`  | End-to-end tests (needs MySQL) |
+| `npm run lint`      | ESLint with `--fix`            |
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## Notes and known issues
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **`DB_SYNC`** controls TypeORM's `synchronize`. Leave it `false` outside local
+  development: when on, TypeORM issues DDL on every boot and will drop columns
+  that no longer appear on an entity. There is no migration setup yet, so
+  schema changes currently have to be applied by hand.
+- **`Game.playtimeMs` holds seconds, not milliseconds.** The scraper has always
+  written seconds and the column was never renamed. Every stored row and
+  consumer assumes seconds; treat the name as historical.
+- **The `utilities` table is orphaned.** Its module was removed; the table was
+  left in place. Drop it manually if the data is not worth keeping.
+- **`HaController` disables TLS verification** via `rejectUnauthorized: false`.
+  The ASEAG endpoint is plain HTTP so the agent is unused today, but this would
+  matter if the host ever redirects to HTTPS.

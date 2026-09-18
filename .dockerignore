@@ -1,6 +1,12 @@
 node_modules
 dist
-Dockerfile
-.dockerignore
+coverage
 .git
 .gitignore
+.github
+Dockerfile
+.dockerignore
+docker-compose.yaml
+.env
+.env.example
+*.md
