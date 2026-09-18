@@ -70,6 +70,8 @@ jobs:
           context: .
           push: true
           platforms: linux/arm64
-          tags: ghcr.io/arifhosan/backend:latest
+          # Matches the repository name, so GHCR links the package to this
+          # repo on first push and GITHUB_TOKEN can write to it.
+          tags: ghcr.io/arifhosan/server-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
