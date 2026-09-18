@@ -73,7 +73,11 @@ describe('IcyStreamParser', () => {
     const empty = Buffer.from([0]);
 
     sink.parser.push(
-      Buffer.concat([Buffer.alloc(METAINT, 0xaa), empty, Buffer.alloc(METAINT, 0xbb)]),
+      Buffer.concat([
+        Buffer.alloc(METAINT, 0xaa),
+        empty,
+        Buffer.alloc(METAINT, 0xbb),
+      ]),
     );
 
     expect(sink.audio()).toHaveLength(METAINT * 2);
