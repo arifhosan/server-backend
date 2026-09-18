@@ -2,8 +2,8 @@
 
 Personal API backend built with [NestJS](https://nestjs.com/) and TypeORM/MySQL.
 It exposes a few unrelated endpoints used by personal projects: JWT auth, a
-Home Assistant proxy for local bus times, and a nightly scraper that tracks
-game playtime.
+Home Assistant proxy for local bus times, a nightly scraper that tracks game
+playtime, and a voice assistant backend for a self-built ESP32 speaker.
 
 ## Modules
 
@@ -12,6 +12,7 @@ game playtime.
 | `auth`     | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify` | Registration and JWT issuing/verification. |
 | `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
 | `scraping` | `GET /scraping`, `GET /scraping/games` | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.      |
+| `voice`    | `POST /voice/ota`, `GET /voice/ws`, `GET /voice/client` | ESP32 voice assistant: speech in, speech out. See [docs/voice-protocol.md](docs/voice-protocol.md). |
 
 ## Layout
 
@@ -28,6 +29,7 @@ src/
     auth/        controller, service, dto/, entities/, types/
     ha/
     scraping/    controller, service, dto/, entities/, scrapers/, utils/
+    voice/       controller, gateway/, pipeline/, clients/, audio/, public/
   main.ts        bootstrap: CORS, validation pipe, exception filter
 ```
 
@@ -88,6 +90,24 @@ runs as a non-root user with `dumb-init` as PID 1.
 | `npm test`          | Unit tests                     |
 | `npm run test:e2e`  | End-to-end tests (needs MySQL) |
 | `npm run lint`      | ESLint with `--fix`            |
+
+## Voice assistant
+
+`src/modules/voice` is a xiaozhi-style backend for a self-built ESP32 speaker.
+One WebSocket carries JSON control frames and binary audio in both directions;
+the server transcribes with [voicebox](https://voicebox.server.arifhosan.me),
+answers with the OpenAI-compatible
+[modelrelay](https://modelrelay.server.arifhosan.me), and streams the reply
+back as speech. Answers are split into sentences so playback starts before the
+model has finished writing.
+
+[docs/voice-protocol.md](docs/voice-protocol.md) is the wire contract to
+implement firmware against. `GET /voice/client` serves a browser page that
+speaks the same protocol, so the whole pipeline can be exercised without
+hardware.
+
+The module holds no database state: conversation history lives on the session
+and dies with the socket.
 
 ## Notes and known issues
 
