@@ -1,0 +1,20 @@
+{
+  "name": "Tuner - Internet Radio",
+  "short_name": "Tuner",
+  "description": "A fast, distraction-free player for internet radio.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0a09",
+  "theme_color": "#0b0a09",
+  "categories": ["music", "entertainment"],
+  "icons": [
+    {
+      "src": "assets/icons/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

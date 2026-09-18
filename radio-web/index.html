@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Tuner - a fast, distraction-free player for internet radio." />
+    <meta name="theme-color" content="#0b0a09" />
+
+    <title>Tuner</title>
+
+    <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="assets/css/app.css" />
+  </head>
+
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" class="sprite" aria-hidden="true">
+      <symbol id="ic-play" viewBox="0 0 24 24">
+        <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14Z" />
+      </symbol>
+      <symbol id="ic-pause" viewBox="0 0 24 24">
+        <path d="M7 4h3.2v16H7zM13.8 4H17v16h-3.2z" />
+      </symbol>
+      <symbol id="ic-prev" viewBox="0 0 24 24">
+        <path d="M7 5h2.4v14H7zm3.9 7 9.1 6.2V5.8z" />
+      </symbol>
+      <symbol id="ic-next" viewBox="0 0 24 24">
+        <path d="M14.6 5H17v14h-2.4zM13.1 12 4 5.8v12.4z" />
+      </symbol>
+      <symbol id="ic-heart" viewBox="0 0 24 24">
+        <path
+          d="M12 21.1l-1.4-1.3C5.5 15.2 2.2 12.2 2.2 8.5A5.3 5.3 0 0 1 7.5 3.2c1.7 0 3.3.8 4.5 2.1a6 6 0 0 1 4.5-2.1 5.3 5.3 0 0 1 5.3 5.3c0 3.7-3.3 6.7-8.4 11.3L12 21.1Z"
+        />
+      </symbol>
+      <symbol id="ic-heart-outline" viewBox="0 0 24 24">
+        <path
+          d="M12 21.1l-1.4-1.3C5.5 15.2 2.2 12.2 2.2 8.5A5.3 5.3 0 0 1 7.5 3.2c1.7 0 3.3.8 4.5 2.1a6 6 0 0 1 4.5-2.1 5.3 5.3 0 0 1 5.3 5.3c0 3.7-3.3 6.7-8.4 11.3L12 21.1Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="ic-volume" viewBox="0 0 24 24">
+        <path d="M4 9.5h3.2L12 5.2v13.6L7.2 14.5H4z" />
+        <path
+          d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.4a7.8 7.8 0 0 1 0 11.2"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="ic-mute" viewBox="0 0 24 24">
+        <path d="M4 9.5h3.2L12 5.2v13.6L7.2 14.5H4z" />
+        <path
+          d="m16 9.5 5 5m0-5-5 5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="ic-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.9" />
+        <path d="m15.6 15.6 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+      </symbol>
+      <symbol id="ic-radio" viewBox="0 0 24 24">
+        <rect x="2.8" y="8" width="18.4" height="12.2" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <circle cx="16.4" cy="14.1" r="2.7" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M6.2 12.2h4.6M6.2 16h4.6M7.4 8 16 4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="ic-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+        <path
+          d="M12 3v2.2M12 18.8V21M4.2 7.5l1.9 1.1M17.9 15.4l1.9 1.1M4.2 16.5l1.9-1.1M17.9 8.6l1.9-1.1"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="ic-chevron-down" viewBox="0 0 24 24">
+        <path d="m6 9.5 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="ic-moon" viewBox="0 0 24 24">
+        <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="ic-timer" viewBox="0 0 24 24">
+        <circle cx="12" cy="13" r="7.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+        <path d="M12 9.5V13l2.4 1.6M9.4 2.8h5.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+      <symbol id="ic-link" viewBox="0 0 24 24">
+        <path
+          d="M10.4 13.6a3.4 3.4 0 0 0 4.8 0l3-3a3.4 3.4 0 0 0-4.8-4.8l-1.2 1.2M13.6 10.4a3.4 3.4 0 0 0-4.8 0l-3 3a3.4 3.4 0 0 0 4.8 4.8l1.2-1.2"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </symbol>
+    </svg>
+
+    <div class="grain" aria-hidden="true"></div>
+
+    <div class="app">
+      <aside class="sidebar">
+        <a class="brand" href="#/browse">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-dial"></span>
+          </span>
+          <span class="brand-text">
+            <strong>Tuner</strong>
+            <small>Internet radio</small>
+          </span>
+        </a>
+
+        <nav class="nav" aria-label="Sections">
+          <a class="nav-item" href="#/browse" data-view="browse">
+            <svg class="icon" aria-hidden="true"><use href="#ic-radio" /></svg>
+            <span>Browse</span>
+          </a>
+          <a class="nav-item" href="#/search" data-view="search">
+            <svg class="icon" aria-hidden="true"><use href="#ic-search" /></svg>
+            <span>Search</span>
+          </a>
+          <a class="nav-item" href="#/favourites" data-view="favourites">
+            <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>
+            <span>Favourites</span>
+            <em class="nav-count" id="favCount" hidden></em>
+          </a>
+        </nav>
+
+        <div class="sidebar-section">
+          <h2 class="sidebar-title">Genres</h2>
+          <div class="chips" id="genreChips"></div>
+        </div>
+
+        <div class="sidebar-foot">
+          <button class="btn-ghost" id="themeToggle" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#ic-moon" /></svg>
+            <span>Theme</span>
+          </button>
+          <button class="btn-ghost" id="openSettings" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#ic-settings" /></svg>
+            <span>Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <form class="searchbar" id="searchForm" role="search">
+            <svg class="icon searchbar-icon" aria-hidden="true"><use href="#ic-search" /></svg>
+            <input
+              id="searchInput"
+              type="search"
+              name="q"
+              placeholder="Search stations, cities, genres"
+              autocomplete="off"
+              aria-label="Search stations"
+            />
+            <button class="searchbar-clear" id="searchClear" type="button" hidden aria-label="Clear search">&times;</button>
+          </form>
+
+          <div class="filters">
+            <label class="select">
+              <span class="select-label">Country</span>
+              <select id="countrySelect" aria-label="Country">
+                <option value="">Anywhere</option>
+              </select>
+            </label>
+            <label class="select">
+              <span class="select-label">Sort</span>
+              <select id="sortSelect" aria-label="Sort by">
+                <option value="votes">Most loved</option>
+                <option value="clickcount">Most played</option>
+                <option value="clicktrend">Trending</option>
+                <option value="bitrate">Best quality</option>
+                <option value="name">A to Z</option>
+                <option value="random">Surprise me</option>
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <div class="content" id="content">
+          <section class="panel" id="panelBrowse">
+            <div class="hero">
+              <div class="hero-copy">
+                <p class="eyebrow">Now tuning</p>
+                <h1 class="hero-title">Sixty thousand stations.<br />No ads, no algorithm.</h1>
+                <p class="hero-sub">
+                  Search by name, city or genre. Press play once and it keeps playing &mdash;
+                  the stream reconnects itself.
+                </p>
+              </div>
+              <div class="hero-dial" aria-hidden="true">
+                <div class="dial-scale"></div>
+                <div class="dial-needle"></div>
+                <div class="dial-glow"></div>
+              </div>
+            </div>
+
+            <div class="rows" id="browseRows"></div>
+          </section>
+
+          <section class="panel" id="panelSearch" hidden>
+            <div class="panel-head">
+              <h2 class="panel-title" id="searchTitle">Search</h2>
+              <p class="panel-meta" id="searchMeta"></p>
+            </div>
+            <div class="grid" id="searchResults"></div>
+          </section>
+
+          <section class="panel" id="panelFavourites" hidden>
+            <div class="panel-head">
+              <h2 class="panel-title">Favourites</h2>
+              <p class="panel-meta" id="favMeta"></p>
+            </div>
+            <div class="grid" id="favouriteResults"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="player" id="player" hidden>
+      <button class="player-expand" id="playerExpand" type="button" aria-label="Open now playing"></button>
+
+      <div class="player-inner">
+        <div class="player-station">
+          <span class="art art-sm" id="barArt" aria-hidden="true"></span>
+          <span class="player-text">
+            <strong class="player-name" id="barName">&mdash;</strong>
+            <span class="player-title" id="barTitle"></span>
+          </span>
+          <span class="eq" id="barEq" aria-hidden="true">
+            <i></i><i></i><i></i><i></i>
+          </span>
+        </div>
+
+        <div class="player-controls">
+          <button class="ctl" id="barPrev" type="button" aria-label="Previous station">
+            <svg class="icon" aria-hidden="true"><use href="#ic-prev" /></svg>
+          </button>
+          <button class="ctl ctl-primary" id="barPlay" type="button" aria-label="Play">
+            <span class="ctl-spinner" aria-hidden="true"></span>
+            <svg class="icon icon-play" aria-hidden="true"><use href="#ic-play" /></svg>
+            <svg class="icon icon-pause" aria-hidden="true"><use href="#ic-pause" /></svg>
+          </button>
+          <button class="ctl" id="barNext" type="button" aria-label="Next station">
+            <svg class="icon" aria-hidden="true"><use href="#ic-next" /></svg>
+          </button>
+        </div>
+
+        <div class="player-meta">
+          <span class="badge" id="barStatus" data-state="idle"><i></i><span>Live</span></span>
+          <span class="readout" id="barReadout"></span>
+          <button class="ctl ctl-sm" id="barFav" type="button" aria-label="Add to favourites">
+            <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>
+          </button>
+          <div class="volume">
+            <button class="ctl ctl-sm" id="barMute" type="button" aria-label="Mute">
+              <svg class="icon" aria-hidden="true"><use href="#ic-volume" /></svg>
+            </button>
+            <input id="barVolume" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="stage" id="stage" hidden aria-label="Now playing">
+      <div class="stage-bg" id="stageBg" aria-hidden="true"></div>
+
+      <header class="stage-top">
+        <button class="ctl ctl-sm" id="stageClose" type="button" aria-label="Close now playing">
+          <svg class="icon" aria-hidden="true"><use href="#ic-chevron-down" /></svg>
+        </button>
+        <span class="stage-label">Now playing</span>
+        <button class="ctl ctl-sm" id="stageTimer" type="button" aria-label="Sleep timer">
+          <svg class="icon" aria-hidden="true"><use href="#ic-timer" /></svg>
+        </button>
+      </header>
+
+      <div class="stage-body">
+        <div class="viz-wrap">
+          <canvas id="viz" class="viz"></canvas>
+          <div class="viz-floor" aria-hidden="true"></div>
+        </div>
+
+        <div class="stage-info">
+          <span class="art art-lg" id="stageArt" aria-hidden="true"></span>
+          <h2 class="stage-name" id="stageName">&mdash;</h2>
+          <p class="stage-title" id="stageTitle"></p>
+          <p class="stage-sub" id="stageSub"></p>
+        </div>
+
+        <div class="stage-readouts">
+          <span class="badge" id="stageStatus" data-state="idle"><i></i><span>Live</span></span>
+          <span class="readout" id="stageClock">00:00</span>
+          <span class="readout" id="stageQuality"></span>
+        </div>
+
+        <div class="stage-controls">
+          <button class="ctl ctl-lg" id="stagePrev" type="button" aria-label="Previous station">
+            <svg class="icon" aria-hidden="true"><use href="#ic-prev" /></svg>
+          </button>
+          <button class="ctl ctl-primary ctl-xl" id="stagePlay" type="button" aria-label="Play">
+            <span class="ctl-spinner" aria-hidden="true"></span>
+            <svg class="icon icon-play" aria-hidden="true"><use href="#ic-play" /></svg>
+            <svg class="icon icon-pause" aria-hidden="true"><use href="#ic-pause" /></svg>
+          </button>
+          <button class="ctl ctl-lg" id="stageNext" type="button" aria-label="Next station">
+            <svg class="icon" aria-hidden="true"><use href="#ic-next" /></svg>
+          </button>
+        </div>
+
+        <div class="stage-foot">
+          <button class="ctl ctl-sm" id="stageFav" type="button" aria-label="Add to favourites">
+            <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>
+          </button>
+          <div class="volume volume-wide">
+            <svg class="icon" aria-hidden="true"><use href="#ic-volume" /></svg>
+            <input id="stageVolume" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Volume" />
+          </div>
+          <a class="ctl ctl-sm" id="stageHome" href="#" target="_blank" rel="noreferrer noopener" aria-label="Station website" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#ic-link" /></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="tabbar" aria-label="Sections">
+      <a class="tab" href="#/browse" data-view="browse">
+        <svg class="icon" aria-hidden="true"><use href="#ic-radio" /></svg>
+        <span>Browse</span>
+      </a>
+      <a class="tab" href="#/search" data-view="search">
+        <svg class="icon" aria-hidden="true"><use href="#ic-search" /></svg>
+        <span>Search</span>
+      </a>
+      <a class="tab" href="#/favourites" data-view="favourites">
+        <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>
+        <span>Favourites</span>
+      </a>
+      <button class="tab" id="tabSettings" type="button">
+        <svg class="icon" aria-hidden="true"><use href="#ic-settings" /></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <dialog class="sheet" id="settingsDialog">
+      <form method="dialog" class="sheet-inner">
+        <h2 class="sheet-title">Settings</h2>
+
+        <label class="field">
+          <span class="field-label">API base URL</span>
+          <input id="apiInput" type="url" placeholder="https://radio.example.com" spellcheck="false" />
+          <span class="field-hint">
+            Where the radio backend lives. Leave empty to use the same origin as this page.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Sleep timer</span>
+          <select id="timerSelect">
+            <option value="0">Off</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="120">2 hours</option>
+          </select>
+        </label>
+
+        <p class="sheet-status" id="apiStatus"></p>
+
+        <div class="sheet-actions">
+          <button class="btn-ghost" value="cancel" type="submit">Close</button>
+          <button class="btn" id="saveSettings" value="save" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <!-- crossOrigin is set at runtime: forcing it here breaks playback against
+         a backend that does not send the matching CORS header. -->
+    <audio id="audio" preload="none"></audio>
+
+    <script src="assets/js/config.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
+  </body>
+</html>

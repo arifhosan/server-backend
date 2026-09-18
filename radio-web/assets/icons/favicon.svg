@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="dial" cx="42%" cy="34%" r="70%">
+      <stop offset="0" stop-color="#2e2722" />
+      <stop offset="1" stop-color="#0d0b0a" />
+    </radialGradient>
+    <linearGradient id="needle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc48a" />
+      <stop offset="1" stop-color="#d8491f" />
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="15" fill="url(#dial)" />
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#3a332d" stroke-width="1.5" />
+
+  <g stroke="#6d635a" stroke-width="2" stroke-linecap="round">
+    <path d="M17 44a19 19 0 0 1 4-23" />
+    <path d="M47 44a19 19 0 0 0-4-23" />
+  </g>
+
+  <circle cx="32" cy="32" r="12" fill="none" stroke="#4a423b" stroke-width="1.5" />
+  <path d="M32 21.5v11" stroke="url(#needle)" stroke-width="3" stroke-linecap="round" />
+  <circle cx="32" cy="32" r="4.4" fill="#ff9233" />
+  <circle cx="32" cy="32" r="8.5" fill="#ff9233" opacity="0.22" />
+</svg>
