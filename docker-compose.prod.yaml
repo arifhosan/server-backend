@@ -1,0 +1,76 @@
+# Production stack for Portainer, fronted by Traefik.
+#
+# The backend only. The database is expected to already exist - point DB_HOST
+# at it. docker-compose.yaml is the local development stack and builds the
+# image itself; this one pulls the published image and publishes no host
+# ports, because Traefik reaches the app over the shared proxy network.
+#
+# Before the first deploy of this image, create the radio presets table:
+# see the CREATE TABLE in docs/radio-module.md. Without it only radio presets
+# fail; everything else, including the voice pipeline, works regardless.
+
+services:
+  app:
+    image: ghcr.io/arifhosan/server-backend:latest
+    restart: unless-stopped
+
+    environment:
+      # Host of the existing database, as reachable from this container: a
+      # container name on a shared network, or a host/IP.
+      DB_HOST: ${DB_HOST:?DB_HOST must be set}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USERNAME: ${DB_USERNAME:-backend}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      DB_NAME: ${DB_NAME:-api_db}
+      # TypeORM issues DDL on every boot when this is on, and drops columns
+      # that no longer appear on an entity. Never true against real data.
+      DB_SYNC: 'false'
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+
+      # Voice assistant. Every setting has a working default; these are the
+      # ones worth pinning in production.
+      #
+      # Traefik closes idle connections at 180s by default, so the server is
+      # set to let go first - the device then sees a clean close rather than a
+      # dropped socket. Raise both together if you want longer sessions.
+      VOICE_IDLE_TIMEOUT_MS: ${VOICE_IDLE_TIMEOUT_MS:-150000}
+      # Advertised to devices by POST /voice/ota.
+      VOICE_PUBLIC_WS_URL: ${VOICE_PUBLIC_WS_URL:-wss://api.server.arifhosan.me/voice/ws}
+      # Unset leaves the device WebSocket open to anyone who can reach it.
+      VOICE_AUTH_TOKEN: ${VOICE_AUTH_TOKEN:-}
+      MODELRELAY_MODEL: ${MODELRELAY_MODEL:-auto-fastest}
+
+    # GET / is the one route that touches neither the database nor an upstream
+    # service, so it reports the process rather than its dependencies.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.backend.rule=Host(`api.server.arifhosan.me`)
+      - traefik.http.routers.backend.entrypoints=web,websecure
+      - traefik.http.routers.backend.tls=true
+      - traefik.http.routers.backend.tls.certresolver=myresolver
+      - traefik.http.services.backend.loadbalancer.server.port=3000
+
+    networks:
+      - traefik
+      # If the database is a container on its own network, add that network
+      # here and declare it below, otherwise DB_HOST will not resolve:
+      #   - database
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
+  # database:
+  #   external: true
+  #   name: <the network the database container is on>
