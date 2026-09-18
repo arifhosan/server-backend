@@ -7,6 +7,7 @@ import { HaController } from './modules/ha/ha.controller';
 import { DatabaseModule } from './database/database.module';
 import { ScrapingModule } from './modules/scraping/scraping.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AuthModule } from './modules/auth/auth.module';
     DatabaseModule,
     ScrapingModule,
     AuthModule,
+    VoiceModule,
   ],
   controllers: [AppController, HaController],
   providers: [AppService],
