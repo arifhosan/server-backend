@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import http, { ClientRequest, IncomingMessage } from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
+import { Readable } from 'node:stream';
+import tls from 'node:tls';
 import { errorMessage } from '@/common/utils/error.util';
 import { IcyStreamParser, parsePlaylist } from './icy-metadata.parser';
 
@@ -8,6 +11,7 @@ const CONNECT_TIMEOUT_MS = 12_000;
 const STALL_TIMEOUT_MS = 20_000;
 const MAX_REDIRECTS = 5;
 const MAX_PLAYLIST_BYTES = 64 * 1024;
+const MAX_HEAD_BYTES = 16 * 1024;
 const USER_AGENT = 'server-backend-radio/1.0';
 
 const PLAYLIST_CONTENT_TYPES = [
@@ -30,17 +34,16 @@ export interface UpstreamHandlers {
   onClose: (reason: string) => void;
 }
 
-/**
- * One attempt at one upstream URL. Uses node:http, not axios, because
- * `insecureHTTPParser` is the only way to accept Shoutcast's `ICY 200 OK`.
- */
+/** One attempt at one upstream URL, over HTTP or a raw socket for ICY servers. */
 export class UpstreamConnection {
   private readonly logger = new Logger(UpstreamConnection.name);
 
   private request: ClientRequest | null = null;
-  private response: IncomingMessage | null = null;
+  private body: Readable | null = null;
+  private socket: net.Socket | null = null;
   private stallTimer: NodeJS.Timeout | null = null;
   private closed = false;
+  private opened = false;
 
   constructor(
     private readonly url: string,
@@ -54,22 +57,19 @@ export class UpstreamConnection {
   destroy(): void {
     this.closed = true;
     this.clearStallTimer();
-    this.response?.destroy();
+    this.body?.destroy();
     this.request?.destroy();
-    this.response = null;
+    this.socket?.destroy();
+    this.body = null;
     this.request = null;
+    this.socket = null;
   }
 
   private open(target: string, redirectsLeft: number): void {
     if (this.closed) return;
 
-    let parsed: URL;
-    try {
-      parsed = new URL(target);
-    } catch {
-      this.finish(`invalid upstream URL: ${target}`);
-      return;
-    }
+    const parsed = this.parse(target);
+    if (!parsed) return;
 
     const transport = parsed.protocol === 'https:' ? https : http;
 
@@ -77,14 +77,10 @@ export class UpstreamConnection {
       {
         protocol: parsed.protocol,
         hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        port: this.portOf(parsed),
         path: `${parsed.pathname}${parsed.search}`,
         method: 'GET',
-        headers: {
-          'User-Agent': USER_AGENT,
-          Accept: '*/*',
-          'Icy-MetaData': '1',
-        },
+        headers: this.requestHeaders(parsed),
         timeout: CONNECT_TIMEOUT_MS,
         insecureHTTPParser: true,
       },
@@ -98,7 +94,18 @@ export class UpstreamConnection {
       this.finish('connect timeout');
     });
 
-    request.on('error', (error: Error) => {
+    request.on('error', (error: NodeJS.ErrnoException) => {
+      // Shoutcast v1 answers `ICY 200 OK`, which no HTTP parser accepts --
+      // not even the insecure one. Those stations need the raw path.
+      const parserFailed = error.code?.startsWith('HPE_') ?? false;
+
+      if (parserFailed && !this.opened && !this.closed) {
+        this.logger.debug(`Falling back to raw socket for ${target}`);
+        this.detachRequest();
+        this.openRaw(parsed, redirectsLeft);
+        return;
+      }
+
       this.finish(`connect failed: ${errorMessage(error)}`);
     });
 
@@ -120,12 +127,7 @@ export class UpstreamConnection {
 
     if (status >= 300 && status < 400 && location) {
       this.discard(response);
-      if (redirectsLeft <= 0) {
-        this.finish('too many redirects');
-        return;
-      }
-      this.detachRequest();
-      this.open(new URL(location, requestUrl).toString(), redirectsLeft - 1);
+      this.hop(location, requestUrl, redirectsLeft, 'too many redirects');
       return;
     }
 
@@ -135,17 +137,112 @@ export class UpstreamConnection {
       return;
     }
 
-    const contentType = (response.headers['content-type'] ?? '')
-      .split(';')[0]
-      .trim()
-      .toLowerCase();
+    const contentType = normaliseContentType(response.headers['content-type']);
 
     if (PLAYLIST_CONTENT_TYPES.includes(contentType)) {
       this.followPlaylist(response, requestUrl, redirectsLeft);
       return;
     }
 
-    this.consumeAudio(response, contentType);
+    this.attachBody(response, {
+      contentType,
+      metaint: Number(response.headers['icy-metaint'] ?? 0),
+      bitrate: Number(response.headers['icy-br'] ?? 0),
+    });
+  }
+
+  /** Reads and parses the response head by hand, accepting `ICY 200 OK`. */
+  private openRaw(requestUrl: URL, redirectsLeft: number): void {
+    if (this.closed) return;
+
+    const port = this.portOf(requestUrl);
+    const socket =
+      requestUrl.protocol === 'https:'
+        ? tls.connect({
+            host: requestUrl.hostname,
+            port,
+            servername: requestUrl.hostname,
+          })
+        : net.connect({ host: requestUrl.hostname, port });
+
+    this.socket = socket;
+    socket.setTimeout(CONNECT_TIMEOUT_MS);
+
+    const path = `${requestUrl.pathname}${requestUrl.search}`;
+    const headers = Object.entries(this.requestHeaders(requestUrl))
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\r\n');
+
+    const onReady = (): void => {
+      socket.write(`GET ${path} HTTP/1.0\r\n${headers}\r\n\r\n`);
+    };
+
+    socket.once(
+      requestUrl.protocol === 'https:' ? 'secureConnect' : 'connect',
+      onReady,
+    );
+
+    let head = Buffer.alloc(0);
+
+    const onHeadData = (chunk: Buffer): void => {
+      head = Buffer.concat([head, chunk]);
+      const split = head.indexOf('\r\n\r\n');
+
+      if (split === -1) {
+        if (head.length > MAX_HEAD_BYTES) {
+          this.finish('upstream sent no usable response head');
+        }
+        return;
+      }
+
+      socket.off('data', onHeadData);
+
+      const parsedHead = parseHead(head.subarray(0, split).toString('latin1'));
+      if (!parsedHead) {
+        this.finish('unparseable upstream response head');
+        return;
+      }
+
+      const { status, fields } = parsedHead;
+      const leftover = head.subarray(split + 4);
+
+      if (status >= 300 && status < 400 && fields.location) {
+        this.hop(
+          fields.location,
+          requestUrl,
+          redirectsLeft,
+          'too many redirects',
+        );
+        return;
+      }
+
+      if (status !== 200) {
+        this.finish(`upstream status ${status}`);
+        return;
+      }
+
+      socket.setTimeout(0);
+
+      this.attachBody(
+        socket,
+        {
+          contentType: normaliseContentType(fields['content-type']),
+          metaint: Number(fields['icy-metaint'] ?? 0),
+          bitrate: Number(fields['icy-br'] ?? 0),
+        },
+        leftover,
+      );
+    };
+
+    socket.on('data', onHeadData);
+    socket.on('timeout', () => {
+      socket.destroy();
+      this.finish('connect timeout');
+    });
+    socket.on('error', (error: Error) =>
+      this.finish(`connect failed: ${errorMessage(error)}`),
+    );
+    socket.on('close', () => this.finish('upstream closed'));
   }
 
   private followPlaylist(
@@ -172,13 +269,7 @@ export class UpstreamConnection {
         return;
       }
 
-      if (redirectsLeft <= 0) {
-        this.finish('too many playlist hops');
-        return;
-      }
-
-      this.detachRequest();
-      this.open(new URL(first, requestUrl).toString(), redirectsLeft - 1);
+      this.hop(first, requestUrl, redirectsLeft, 'too many playlist hops');
     });
 
     response.on('error', (error: Error) => {
@@ -186,41 +277,83 @@ export class UpstreamConnection {
     });
   }
 
-  private consumeAudio(response: IncomingMessage, contentType: string): void {
-    this.response = response;
-
-    const metaint = Number(response.headers['icy-metaint'] ?? 0);
-    const icyBitrate = Number(response.headers['icy-br'] ?? 0);
+  private attachBody(
+    body: Readable,
+    head: { contentType: string; metaint: number; bitrate: number },
+    initial?: Buffer,
+  ): void {
+    this.body = body;
+    this.opened = true;
 
     const parser = new IcyStreamParser(
-      Number.isFinite(metaint) ? metaint : 0,
+      Number.isFinite(head.metaint) ? head.metaint : 0,
       this.handlers.onAudio,
       this.handlers.onTitle,
     );
 
     this.handlers.onOpen({
-      contentType: contentType || 'audio/mpeg',
+      contentType: head.contentType || 'audio/mpeg',
       bitrateKbps:
-        Number.isFinite(icyBitrate) && icyBitrate > 0 ? icyBitrate : null,
+        Number.isFinite(head.bitrate) && head.bitrate > 0 ? head.bitrate : null,
     });
 
     this.request?.setTimeout(0);
-    response.socket?.setTimeout(0);
     this.armStallTimer();
 
-    response.on('data', (chunk: Buffer) => {
+    if (initial?.length) parser.push(initial);
+
+    body.on('data', (chunk: Buffer) => {
       this.armStallTimer();
       parser.push(chunk);
     });
 
-    response.on('end', () => this.finish('upstream ended'));
-    response.on('close', () => this.finish('upstream closed'));
-    response.on('error', (error: Error) =>
+    body.on('end', () => this.finish('upstream ended'));
+    body.on('close', () => this.finish('upstream closed'));
+    body.on('error', (error: Error) =>
       this.finish(`upstream error: ${errorMessage(error)}`),
     );
   }
 
-  /** Listeners go first: destroy() emits 'error' async, after the replacement is live. */
+  private hop(
+    location: string,
+    requestUrl: URL,
+    redirectsLeft: number,
+    exhausted: string,
+  ): void {
+    if (redirectsLeft <= 0) {
+      this.finish(exhausted);
+      return;
+    }
+
+    this.detachRequest();
+    this.socket?.destroy();
+    this.socket = null;
+    this.open(new URL(location, requestUrl).toString(), redirectsLeft - 1);
+  }
+
+  private parse(target: string): URL | null {
+    try {
+      return new URL(target);
+    } catch {
+      this.finish(`invalid upstream URL: ${target}`);
+      return null;
+    }
+  }
+
+  private portOf(url: URL): number {
+    return Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
+  }
+
+  private requestHeaders(url: URL): Record<string, string> {
+    return {
+      Host: url.host,
+      'User-Agent': USER_AGENT,
+      Accept: '*/*',
+      'Icy-MetaData': '1',
+    };
+  }
+
+  /** Listeners go first: destroy() emits 'error' after the replacement is live. */
   private detachRequest(): void {
     const previous = this.request;
     this.request = null;
@@ -229,7 +362,6 @@ export class UpstreamConnection {
     previous?.destroy();
   }
 
-  /** An unhandled 'error' on an unread response would take the process down. */
   private discard(response: IncomingMessage): void {
     response.on('error', () => undefined);
     response.resume();
@@ -256,8 +388,33 @@ export class UpstreamConnection {
     if (this.closed) return;
     this.closed = true;
     this.clearStallTimer();
-    this.response?.destroy();
+    this.body?.destroy();
     this.request?.destroy();
+    this.socket?.destroy();
     this.handlers.onClose(reason);
   }
+}
+
+function normaliseContentType(value: string | undefined): string {
+  return (value ?? '').split(';')[0].trim().toLowerCase();
+}
+
+function parseHead(
+  text: string,
+): { status: number; fields: Record<string, string> } | null {
+  const [statusLine, ...headerLines] = text.split('\r\n');
+  // Matches both `HTTP/1.0 200 OK` and Shoutcast's `ICY 200 OK`.
+  const status = Number(/^\S+\s+(\d{3})/.exec(statusLine)?.[1]);
+  if (!Number.isFinite(status)) return null;
+
+  const fields: Record<string, string> = {};
+  for (const line of headerLines) {
+    const separator = line.indexOf(':');
+    if (separator === -1) continue;
+    fields[line.slice(0, separator).trim().toLowerCase()] = line
+      .slice(separator + 1)
+      .trim();
+  }
+
+  return { status, fields };
 }
