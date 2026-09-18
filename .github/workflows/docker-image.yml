@@ -41,6 +41,12 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
 
+    # Actions mints this token per run, so there is no PAT to expire. It can
+    # only write to packages this repository has access to.
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -56,7 +62,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image (ARM64)
         uses: docker/build-push-action@v6
