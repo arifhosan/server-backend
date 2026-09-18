@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Radio</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161b22;
+        --line: #272e38;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #4fc3f7;
+        --bad: #f78166;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0 16px 168px;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        padding: 16px 0 12px;
+        background: linear-gradient(var(--bg) 78%, transparent);
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 18px;
+        letter-spacing: 0.02em;
+      }
+
+      form {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+
+      input,
+      select,
+      button {
+        min-width: 0;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--text);
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      .primary {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .stations {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .station {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .station.on {
+        border-color: var(--accent);
+      }
+
+      .station-main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .station-name {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-weight: 600;
+      }
+
+      .station-meta {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .icon {
+        padding: 6px 9px;
+        font-size: 13px;
+      }
+
+      .note {
+        padding: 24px 4px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0 0 14px;
+      }
+
+      .preset {
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      footer {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .now {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .now-text {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .now-name {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-weight: 600;
+      }
+
+      .now-title {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .status.warn {
+        color: var(--bad);
+      }
+
+      input[type='range'] {
+        width: 110px;
+        padding: 0;
+        border: 0;
+        background: none;
+      }
+
+      @media (max-width: 560px) {
+        .now {
+          flex-wrap: wrap;
+        }
+
+        input[type='range'] {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Radio</h1>
+      <form id="search">
+        <input id="q" name="q" placeholder="Station name" autocomplete="off" />
+        <select id="country" name="country">
+          <option value="">Any country</option>
+        </select>
+        <input id="city" name="city" placeholder="City or region" autocomplete="off" />
+        <input id="tag" name="tag" placeholder="Genre" autocomplete="off" />
+        <button class="primary" type="submit">Search</button>
+      </form>
+    </header>
+
+    <div class="presets" id="presets"></div>
+    <ul class="stations" id="results"></ul>
+    <p class="note" id="note">Search for a station to start.</p>
+
+    <footer>
+      <div class="now">
+        <button class="icon" id="toggle" type="button">Play</button>
+        <div class="now-text">
+          <div class="now-name" id="nowName">Nothing playing</div>
+          <div class="now-title" id="nowTitle"></div>
+        </div>
+        <span class="status" id="status"></span>
+        <input id="volume" type="range" min="0" max="1" step="0.01" value="0.9" />
+      </div>
+      <audio id="audio" preload="none"></audio>
+    </footer>
+
+    <script>
+      const PROGRESS_TIMEOUT_MS = 12000;
+      const WATCHDOG_TICK_MS = 2000;
+      const RETRY_BASE_MS = 1000;
+      const RETRY_MAX_MS = 15000;
+
+      const el = (id) => document.getElementById(id);
+      const audio = el('audio');
+
+      let current = null;
+      let retries = 0;
+      let lastProgress = 0;
+      let wantPlaying = false;
+      let events = null;
+
+      const savedVolume = Number(localStorage.getItem('radio.volume'));
+      audio.volume = Number.isFinite(savedVolume) && savedVolume > 0 ? savedVolume : 0.9;
+      el('volume').value = String(audio.volume);
+
+      function setStatus(text, warn) {
+        const node = el('status');
+        node.textContent = text;
+        node.classList.toggle('warn', Boolean(warn));
+      }
+
+      function streamUrl(uuid) {
+        return `/radio/stream/${uuid}?t=${Date.now()}`;
+      }
+
+      function play(station) {
+        current = station;
+        retries = 0;
+        wantPlaying = true;
+
+        el('nowName').textContent = station.name;
+        el('nowTitle').textContent = '';
+        document.title = `${station.name} - Radio`;
+        markActive();
+        watchTitles(station.uuid);
+        load();
+      }
+
+      function load() {
+        if (!current) return;
+
+        setStatus('connecting');
+        lastProgress = Date.now();
+        audio.src = streamUrl(current.uuid);
+        audio.play().catch(() => setStatus('press play', true));
+      }
+
+      // The server reconnects upstream behind an open response, so this only
+      // has to cover the browser losing its own connection to the server.
+      function reconnect(reason) {
+        if (!current || !wantPlaying) return;
+
+        retries += 1;
+        const wait = Math.min(RETRY_BASE_MS * 2 ** (retries - 1), RETRY_MAX_MS);
+        setStatus(`${reason}, retrying in ${Math.round(wait / 1000)}s`, true);
+        setTimeout(load, wait);
+      }
+
+      audio.addEventListener('playing', () => {
+        retries = 0;
+        lastProgress = Date.now();
+        setStatus('live');
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        lastProgress = Date.now();
+      });
+
+      audio.addEventListener('progress', () => {
+        lastProgress = Date.now();
+      });
+
+      audio.addEventListener('waiting', () => setStatus('buffering', true));
+      audio.addEventListener('error', () => reconnect('stream error'));
+      audio.addEventListener('ended', () => reconnect('stream ended'));
+
+      audio.addEventListener('pause', () => {
+        if (wantPlaying) return;
+        setStatus('paused');
+      });
+
+      setInterval(() => {
+        if (!wantPlaying || audio.paused) return;
+        if (Date.now() - lastProgress < PROGRESS_TIMEOUT_MS) return;
+
+        reconnect('stalled');
+      }, WATCHDOG_TICK_MS);
+
+      window.addEventListener('online', () => {
+        if (wantPlaying) load();
+      });
+
+      el('toggle').addEventListener('click', () => {
+        if (!current) return;
+
+        if (wantPlaying) {
+          wantPlaying = false;
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
+          el('toggle').textContent = 'Play';
+          setStatus('stopped');
+          return;
+        }
+
+        wantPlaying = true;
+        el('toggle').textContent = 'Stop';
+        load();
+      });
+
+      el('volume').addEventListener('input', (event) => {
+        audio.volume = Number(event.target.value);
+        localStorage.setItem('radio.volume', String(audio.volume));
+      });
+
+      function watchTitles(uuid) {
+        events?.close();
+        events = new EventSource(`/radio/stream/${uuid}/events`);
+
+        events.addEventListener('message', (event) => {
+          const state = JSON.parse(event.data);
+          el('nowTitle').textContent = state.title ?? '';
+
+          if (state.connected === false && wantPlaying) {
+            setStatus('station down, reconnecting', true);
+          }
+        });
+
+        events.addEventListener('error', () => setStatus('metadata offline'));
+      }
+
+      function markActive() {
+        document.querySelectorAll('.station').forEach((node) => {
+          node.classList.toggle('on', node.dataset.uuid === current?.uuid);
+        });
+      }
+
+      function stationRow(station) {
+        const item = document.createElement('li');
+        item.className = 'station';
+        item.dataset.uuid = station.uuid;
+
+        const main = document.createElement('div');
+        main.className = 'station-main';
+
+        const name = document.createElement('div');
+        name.className = 'station-name';
+        name.textContent = station.name || 'Unnamed station';
+
+        const meta = document.createElement('div');
+        meta.className = 'station-meta';
+        meta.textContent = [
+          station.country,
+          station.state,
+          station.codec && `${station.codec} ${station.bitrate || '?'}k`,
+          station.tags?.slice(0, 3).join(', '),
+        ]
+          .filter(Boolean)
+          .join(' - ');
+
+        main.append(name, meta);
+
+        const playButton = document.createElement('button');
+        playButton.className = 'icon';
+        playButton.type = 'button';
+        playButton.textContent = 'Play';
+        playButton.addEventListener('click', () => {
+          wantPlaying = true;
+          el('toggle').textContent = 'Stop';
+          play(station);
+        });
+
+        const starButton = document.createElement('button');
+        starButton.className = 'icon';
+        starButton.type = 'button';
+        starButton.textContent = 'Preset';
+        starButton.addEventListener('click', async () => {
+          starButton.disabled = true;
+          try {
+            await fetch('/radio/presets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ stationUuid: station.uuid, name: station.name }),
+            });
+            await loadPresets();
+          } finally {
+            starButton.disabled = false;
+          }
+        });
+
+        item.append(main, playButton, starButton);
+        return item;
+      }
+
+      async function search(event) {
+        event?.preventDefault();
+
+        const params = new URLSearchParams();
+        for (const key of ['q', 'country', 'city', 'tag']) {
+          const value = el(key).value.trim();
+          if (value) params.set(key, value);
+        }
+
+        if ([...params.keys()].length === 0) {
+          params.set('order', 'votes');
+        }
+        params.set('limit', '60');
+
+        el('note').textContent = 'Searching...';
+        el('results').replaceChildren();
+
+        try {
+          const response = await fetch(`/radio/stations/search?${params}`);
+          if (!response.ok) throw new Error(await response.text());
+
+          const stations = await response.json();
+          el('note').textContent = stations.length ? '' : 'No stations matched.';
+          el('results').replaceChildren(...stations.map(stationRow));
+          markActive();
+        } catch {
+          el('note').textContent = 'Search failed. Is the API reachable?';
+        }
+      }
+
+      async function loadPresets() {
+        const box = el('presets');
+
+        try {
+          const response = await fetch('/radio/presets');
+          if (!response.ok) throw new Error('presets unavailable');
+
+          const presets = await response.json();
+          box.replaceChildren(
+            ...presets.map((preset) => {
+              const button = document.createElement('button');
+              button.className = 'preset';
+              button.type = 'button';
+              button.textContent = `${preset.slot}. ${preset.name}`;
+              button.addEventListener('click', () => {
+                wantPlaying = true;
+                el('toggle').textContent = 'Stop';
+                play({ uuid: preset.uuid, name: preset.name });
+              });
+              return button;
+            }),
+          );
+        } catch {
+          box.replaceChildren();
+        }
+      }
+
+      async function loadCountries() {
+        try {
+          const response = await fetch('/radio/countries');
+          if (!response.ok) return;
+
+          const countries = await response.json();
+          const select = el('country');
+          for (const country of countries.slice(0, 120)) {
+            const option = document.createElement('option');
+            option.value = country.name;
+            option.textContent = `${country.name} (${country.stationcount})`;
+            select.append(option);
+          }
+        } catch {
+          /* the field still accepts a typed country name */
+        }
+      }
+
+      el('search').addEventListener('submit', search);
+      loadCountries();
+      loadPresets();
+    </script>
+  </body>
+</html>
