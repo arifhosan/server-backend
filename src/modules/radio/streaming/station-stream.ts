@@ -64,14 +64,28 @@ export class StationStream {
     };
   }
 
+  start(): void {
+    if (!this.connection && !this.reconnectTimer && !this.stopped) {
+      this.connect();
+    }
+  }
+
+  /** Settles once upstream answers, so callers can send a real Content-Type. */
+  ready(): Promise<void> {
+    if (this.connectedAt !== null) return Promise.resolve();
+    if (this.stopped) return Promise.reject(new Error('stream stopped'));
+
+    return new Promise((resolve, reject) => {
+      this.readyWaiters.push({ resolve, reject });
+    });
+  }
+
   addClient(sink: Writable): void {
     this.clients.add(sink);
 
     for (const chunk of this.prebuffer) sink.write(chunk);
 
-    if (!this.connection && !this.reconnectTimer && !this.stopped) {
-      this.connect();
-    }
+    this.start();
   }
 
   removeClient(sink: Writable): void {
@@ -81,6 +95,7 @@ export class StationStream {
 
   stop(): void {
     this.stopped = true;
+    this.settleReady(new Error(`${this.station.name} is unreachable`));
     this.clearReconnectTimer();
     this.connection?.destroy();
     this.connection = null;
@@ -96,7 +111,9 @@ export class StationStream {
     if (this.stopped) return;
 
     const url = this.urls[this.urlIndex % this.urls.length];
-    this.logger.log(`Connecting ${this.station.name} (try ${this.attempts + 1}): ${url}`);
+    this.logger.log(
+      `Connecting ${this.station.name} (try ${this.attempts + 1}): ${url}`,
+    );
 
     this.connection = new UpstreamConnection(url, {
       onOpen: (info) => this.handleOpen(info),
@@ -113,7 +130,18 @@ export class StationStream {
   private handleOpen(info: UpstreamInfo): void {
     this.connectedAt = Date.now();
     this.contentType = info.contentType;
+    this.settleReady(null);
     this.logger.log(`Connected ${this.station.name} as ${info.contentType}`);
+  }
+
+  private settleReady(error: Error | null): void {
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+
+    for (const waiter of waiters) {
+      if (error) waiter.reject(error);
+      else waiter.resolve();
+    }
   }
 
   private handleClose(reason: string): void {
@@ -167,10 +195,12 @@ export class StationStream {
 
   private broadcast(chunk: Buffer): void {
     this.remember(chunk);
+    let dropped = false;
 
     for (const client of this.clients) {
       if (client.destroyed || client.writableEnded) {
         this.clients.delete(client);
+        dropped = true;
         continue;
       }
 
@@ -178,13 +208,14 @@ export class StationStream {
         this.logger.warn(`Dropping slow listener of ${this.station.name}`);
         this.clients.delete(client);
         client.destroy();
+        dropped = true;
         continue;
       }
 
       client.write(chunk);
     }
 
-    if (this.clients.size === 0) this.onEmpty(this.station.uuid);
+    if (dropped && this.clients.size === 0) this.onEmpty(this.station.uuid);
   }
 
   private remember(chunk: Buffer): void {

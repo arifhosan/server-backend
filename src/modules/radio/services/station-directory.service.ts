@@ -22,7 +22,10 @@ export interface ResolvedStation {
 @Injectable()
 export class StationDirectoryService {
   private readonly stations = new TtlCache<ResolvedStation>(STATION_TTL_MS);
-  private readonly facets = new TtlCache<RadioBrowserNameCount[]>(FACET_TTL_MS, 16);
+  private readonly facets = new TtlCache<RadioBrowserNameCount[]>(
+    FACET_TTL_MS,
+    16,
+  );
 
   constructor(private readonly client: RadioBrowserClient) {}
 

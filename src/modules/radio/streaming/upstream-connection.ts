@@ -200,7 +200,8 @@ export class UpstreamConnection {
 
     this.handlers.onOpen({
       contentType: contentType || 'audio/mpeg',
-      bitrateKbps: Number.isFinite(icyBitrate) && icyBitrate > 0 ? icyBitrate : null,
+      bitrateKbps:
+        Number.isFinite(icyBitrate) && icyBitrate > 0 ? icyBitrate : null,
     });
 
     this.request?.setTimeout(0);

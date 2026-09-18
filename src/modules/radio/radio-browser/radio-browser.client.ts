@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
-import axiosRetry from 'axios-retry';
+import axiosRetry, { exponentialDelay } from 'axios-retry';
 import { promises as dns } from 'node:dns';
 import { errorMessage } from '@/common/utils/error.util';
 
@@ -30,7 +30,7 @@ export class RadioBrowserClient {
 
     axiosRetry(this.http, {
       retries: 2,
-      retryDelay: axiosRetry.exponentialDelay,
+      retryDelay: exponentialDelay,
       shouldResetTimeout: true,
     });
   }
@@ -44,13 +44,18 @@ export class RadioBrowserClient {
 
     for (const host of hosts) {
       try {
-        const response = await this.http.get<T>(`https://${host}/json/${path}`, {
-          params,
-        });
+        const response = await this.http.get<T>(
+          `https://${host}/json/${path}`,
+          {
+            params,
+          },
+        );
         return response.data;
       } catch (error: unknown) {
         lastError = error;
-        this.logger.warn(`Host ${host} failed for /json/${path}: ${errorMessage(error)}`);
+        this.logger.warn(
+          `Host ${host} failed for /json/${path}: ${errorMessage(error)}`,
+        );
       }
     }
 
@@ -63,9 +68,11 @@ export class RadioBrowserClient {
 
   /** Upstream counts one click per IP per station per day; never fails playback. */
   reportClick(stationUuid: string): void {
-    this.get(`url/${encodeURIComponent(stationUuid)}`).catch((error: unknown) => {
-      this.logger.debug(`Click report failed: ${errorMessage(error)}`);
-    });
+    this.get(`url/${encodeURIComponent(stationUuid)}`).catch(
+      (error: unknown) => {
+        this.logger.debug(`Click report failed: ${errorMessage(error)}`);
+      },
+    );
   }
 
   private async resolveHosts(): Promise<string[]> {
