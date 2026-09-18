@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice Pipeline Tester</title>
+    <style>
+      :root {
+        --bg: #fdfcfb;
+        --card: #ffffff;
+        --border: #e6e3e0;
+        --text: #1a1918;
+        --muted: #78736d;
+        --accent: #2563eb;
+        --accent-text: #ffffff;
+        --danger: #dc2626;
+        --ok: #059669;
+        --chip: #f1efed;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161514;
+          --card: #1f1e1c;
+          --border: #34322f;
+          --text: #f2f0ee;
+          --muted: #9b958d;
+          --accent: #3b82f6;
+          --chip: #2a2825;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      p.sub {
+        margin: 0 0 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      @media (max-width: 520px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--chip);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-text);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      #talk {
+        flex: 1;
+        min-width: 180px;
+        padding: 18px;
+        font-size: 16px;
+      }
+      #talk.active {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #fff;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      .dot.on {
+        background: var(--ok);
+      }
+      #log {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        max-height: 340px;
+        overflow-y: auto;
+        font-size: 13px;
+      }
+      #log li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+      }
+      #log li:last-child {
+        border-bottom: 0;
+      }
+      .tag {
+        flex: 0 0 auto;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        min-width: 58px;
+      }
+      .tag.you {
+        color: var(--accent);
+      }
+      .tag.err {
+        color: var(--danger);
+      }
+      code {
+        background: var(--chip);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Voice Pipeline Tester</h1>
+      <p class="sub">
+        Speaks the same WebSocket protocol as the ESP32 firmware, using
+        <code>pcm</code> audio so the browser needs no Opus encoder.
+      </p>
+
+      <section>
+        <div class="row">
+          <div>
+            <label for="url">WebSocket URL</label>
+            <input id="url" />
+          </div>
+          <div>
+            <label for="token">Auth token (optional)</label>
+            <input id="token" placeholder="VOICE_AUTH_TOKEN" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="mode">Listen mode</label>
+            <select id="mode">
+              <option value="manual">manual — hold to talk</option>
+              <option value="auto">auto — server VAD ends the turn</option>
+            </select>
+          </div>
+          <div>
+            <label for="rate">Uplink sample rate</label>
+            <select id="rate">
+              <option value="16000">16000 Hz</option>
+              <option value="8000">8000 Hz</option>
+            </select>
+          </div>
+        </div>
+        <div class="controls">
+          <button id="connect" class="primary">Connect</button>
+          <button id="disconnect" disabled>Disconnect</button>
+          <span class="status"><span class="dot" id="dot"></span><span id="state">offline</span></span>
+        </div>
+      </section>
+
+      <section>
+        <div class="controls">
+          <button id="talk" disabled>Hold to talk</button>
+          <button id="abort" disabled>Abort</button>
+        </div>
+      </section>
+
+      <section>
+        <ul id="log"></ul>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+      $('url').value = `${wsProto}://${location.host}/voice/ws`;
+
+      let socket = null;
+      let audioContext = null;
+      let micStream = null;
+      let processor = null;
+      let source = null;
+      let listening = false;
+      let downlinkRate = 24000;
+      let playhead = 0;
+
+      function log(tag, text, cls = '') {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.className = `tag ${cls}`;
+        label.textContent = tag;
+        const body = document.createElement('span');
+        body.textContent = text;
+        li.append(label, body);
+        $('log').prepend(li);
+      }
+
+      function setConnected(on) {
+        $('dot').classList.toggle('on', on);
+        $('state').textContent = on ? 'connected' : 'offline';
+        $('connect').disabled = on;
+        $('disconnect').disabled = !on;
+        $('talk').disabled = !on;
+        $('abort').disabled = !on;
+      }
+
+      function send(message) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(message));
+        }
+      }
+
+      async function connect() {
+        const token = $('token').value.trim();
+        const rate = Number($('rate').value);
+        const url = new URL($('url').value);
+        url.searchParams.set('device', 'browser-tester');
+        url.searchParams.set('client', crypto.randomUUID());
+        if (token) url.searchParams.set('token', token);
+
+        audioContext = new AudioContext({ sampleRate: rate });
+        await audioContext.resume();
+        playhead = audioContext.currentTime;
+
+        socket = new WebSocket(url.toString());
+        socket.binaryType = 'arraybuffer';
+
+        socket.onopen = () => {
+          setConnected(true);
+          log('system', 'socket open');
+          send({
+            type: 'hello',
+            version: 1,
+            transport: 'websocket',
+            features: { mcp: false, aec: false },
+            audio_params: {
+              format: 'pcm',
+              sample_rate: audioContext.sampleRate,
+              channels: 1,
+              frame_duration: 60,
+            },
+          });
+        };
+
+        socket.onmessage = (event) => {
+          if (typeof event.data === 'string') return onControl(JSON.parse(event.data));
+          playPcm(new Int16Array(event.data));
+        };
+
+        socket.onclose = (event) => {
+          setConnected(false);
+          stopCapture();
+          log('system', `socket closed (${event.code} ${event.reason || ''})`.trim());
+        };
+
+        socket.onerror = () => log('error', 'socket error', 'err');
+      }
+
+      function onControl(message) {
+        switch (message.type) {
+          case 'hello':
+            downlinkRate = message.audio_params?.sample_rate ?? 24000;
+            log('system', `session ${message.session_id} · downlink ${downlinkRate} Hz`);
+            break;
+          case 'stt':
+            log('you', message.text || '(nothing heard)', 'you');
+            break;
+          case 'tts':
+            if (message.state === 'sentence_start') log('assistant', message.text);
+            break;
+          case 'alert':
+            log('error', message.message, 'err');
+            break;
+          default:
+            break;
+        }
+      }
+
+      function playPcm(samples) {
+        if (!audioContext || samples.length === 0) return;
+        const buffer = audioContext.createBuffer(1, samples.length, downlinkRate);
+        const channel = buffer.getChannelData(0);
+        for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+
+        const node = audioContext.createBufferSource();
+        node.buffer = buffer;
+        node.connect(audioContext.destination);
+        playhead = Math.max(playhead, audioContext.currentTime + 0.05);
+        node.start(playhead);
+        playhead += buffer.duration;
+      }
+
+      async function startCapture() {
+        if (listening) return;
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+        source = audioContext.createMediaStreamSource(micStream);
+        processor = audioContext.createScriptProcessor(1024, 1, 1);
+
+        processor.onaudioprocess = (event) => {
+          if (!listening || !socket || socket.readyState !== WebSocket.OPEN) return;
+          const input = event.inputBuffer.getChannelData(0);
+          const pcm = new Int16Array(input.length);
+          for (let i = 0; i < input.length; i++) {
+            const clamped = Math.max(-1, Math.min(1, input[i]));
+            pcm[i] = clamped < 0 ? clamped * 32768 : clamped * 32767;
+          }
+          socket.send(pcm.buffer);
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        listening = true;
+        send({ type: 'listen', state: 'start', mode: $('mode').value });
+        $('talk').classList.add('active');
+        $('talk').textContent = 'Listening…';
+      }
+
+      function stopCapture(notify = false) {
+        if (!listening) return;
+        listening = false;
+        if (notify) send({ type: 'listen', state: 'stop' });
+        processor?.disconnect();
+        source?.disconnect();
+        micStream?.getTracks().forEach((track) => track.stop());
+        processor = source = micStream = null;
+        $('talk').classList.remove('active');
+        $('talk').textContent = 'Hold to talk';
+      }
+
+      $('connect').onclick = () => connect().catch((e) => log('error', e.message, 'err'));
+      $('disconnect').onclick = () => socket?.close(1000, 'bye');
+      $('abort').onclick = () => send({ type: 'abort', reason: 'user' });
+
+      const talk = $('talk');
+      const press = (event) => {
+        event.preventDefault();
+        startCapture().catch((e) => log('error', e.message, 'err'));
+      };
+      const release = (event) => {
+        event.preventDefault();
+        stopCapture(true);
+      };
+      talk.addEventListener('pointerdown', press);
+      talk.addEventListener('pointerup', release);
+      talk.addEventListener('pointercancel', release);
+      talk.addEventListener('pointerleave', release);
+    </script>
+  </body>
+</html>
