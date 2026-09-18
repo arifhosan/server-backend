@@ -4,7 +4,17 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["**/*.html"],
-    "watchAssets": true
+    "assets": [
+      {
+        "include": "modules/radio/public/**/*",
+        "outDir": "dist",
+        "watchAssets": true
+      },
+      {
+        "include": "modules/voice/public/**/*",
+        "outDir": "dist",
+        "watchAssets": true
+      }
+    ]
   }
 }
