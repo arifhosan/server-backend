@@ -50,8 +50,6 @@ const dom = {
   stage: el('stage'),
   stageBg: el('stageBg'),
   settings: el('settingsDialog'),
-  apiInput: el('apiInput'),
-  apiStatus: el('apiStatus'),
   timerSelect: el('timerSelect'),
   viz: el('viz'),
 };
@@ -68,12 +66,18 @@ const state = {
 
 /* ------------------------------------------------------------------ theme */
 
+const THEMES = ['dark', 'light', '2010'];
+const THEME_COLORS = { dark: '#0b0a09', light: '#f4efe6', 2010: '#006a4e' };
+
 function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  store.setTheme(theme);
+  const name = THEMES.includes(theme) ? theme : 'dark';
+
+  document.documentElement.dataset.theme = name;
+  store.setTheme(name);
+  el('themeSelect').value = name;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', theme === 'light' ? '#f4efe6' : '#0b0a09');
+    ?.setAttribute('content', THEME_COLORS[name]);
 }
 
 applyTheme(
@@ -82,8 +86,12 @@ applyTheme(
 );
 
 el('themeToggle').addEventListener('click', () => {
-  applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  const next = THEMES[(THEMES.indexOf(document.documentElement.dataset.theme) + 1) % THEMES.length];
+  applyTheme(next);
+  toast(`${next === '2010' ? '2010' : next === 'light' ? 'Daylight' : 'Midnight'} theme`);
 });
+
+el('themeSelect').addEventListener('change', (event) => applyTheme(event.target.value));
 
 /* ----------------------------------------------------------------- routing */
 
@@ -161,7 +169,7 @@ async function runSearch() {
     if (state.lastQuery !== token) return;
     dom.searchMeta.textContent = 'failed';
     dom.searchResults.replaceChildren(
-      emptyState('Could not reach the API', `${error.message}. Check the API base URL in Settings.`),
+      emptyState('Could not reach the API', `${error.message}. Check your connection and try again.`),
     );
   }
 }
@@ -550,23 +558,16 @@ el('openSettings').addEventListener('click', () => openSettings());
 el('tabSettings').addEventListener('click', () => openSettings());
 
 function openSettings() {
-  dom.apiInput.value = api.base;
-  dom.apiStatus.textContent = '';
-  dom.apiStatus.removeAttribute('data-state');
+  el('themeSelect').value = document.documentElement.dataset.theme;
   dom.settings.showModal();
 }
 
 dom.settings.addEventListener('close', () => {
   if (dom.settings.returnValue !== 'save') return;
 
-  api.setBase(dom.apiInput.value);
-  player.startSleepTimer(Number(dom.timerSelect.value));
-  toast('Settings saved');
-
-  dom.countrySelect.length = 1;
-  dom.genreChips.replaceChildren();
-  void loadFilters();
-  void loadBrowse();
+  const minutes = Number(dom.timerSelect.value);
+  player.startSleepTimer(minutes);
+  toast(minutes ? `Sleeping in ${minutes} minutes` : 'Settings saved');
 });
 
 /* --------------------------------------------------------------- shortcuts */
@@ -604,7 +605,7 @@ async function boot() {
   await loadFilters();
   await loadBrowse();
 
-  if (!api.base && location.protocol === 'file:') {
+  if (location.protocol === 'file:') {
     toast('Open this over http, not from a file path', 'error');
   }
 }

@@ -15,9 +15,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Hind+Siliguri:wght@400;500;600;700&display=swap"
     />
     <link rel="stylesheet" href="assets/css/app.css" />
+    <link rel="stylesheet" href="assets/css/theme-2010.css" />
   </head>
 
   <body>
@@ -361,11 +362,13 @@
         <h2 class="sheet-title">Settings</h2>
 
         <label class="field">
-          <span class="field-label">API base URL</span>
-          <input id="apiInput" type="url" placeholder="https://radio.example.com" spellcheck="false" />
-          <span class="field-hint">
-            Where the radio backend lives. Leave empty to use the same origin as this page.
-          </span>
+          <span class="field-label">Theme</span>
+          <select id="themeSelect">
+            <option value="dark">Midnight</option>
+            <option value="light">Daylight</option>
+            <option value="2010">2010</option>
+          </select>
+          <span class="field-hint">2010 is a throwback to the FM radio days.</span>
         </label>
 
         <label class="field">
@@ -378,8 +381,6 @@
             <option value="120">2 hours</option>
           </select>
         </label>
-
-        <p class="sheet-status" id="apiStatus"></p>
 
         <div class="sheet-actions">
           <button class="btn-ghost" value="cancel" type="submit">Close</button>

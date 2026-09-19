@@ -2,9 +2,18 @@ const FFT_SIZE = 2048;
 const MIN_HZ = 40;
 const MAX_HZ = 16000;
 
-/* Fast attack, slow release - how a hardware VU meter behaves. */
-const RELEASE = 0.84;
-const PEAK_GRAVITY = 0.006;
+/* Loud music pins the default -100..-30 window at full scale. A wider, higher
+   window keeps the bars dancing instead of sitting at the ceiling. */
+const MIN_DB = -88;
+const MAX_DB = -10;
+
+/* Seconds to close most of the gap. Time based, so a 120Hz screen does not
+   animate at double speed. */
+const ATTACK_TAU = 0.06;
+const RELEASE_TAU = 0.38;
+const PEAK_FALL_PER_SEC = 0.32;
+const PEAK_HANG = 0.42;
+
 const BASELINE = 0.74;
 
 export class Visualizer {
@@ -22,7 +31,9 @@ export class Visualizer {
     this.values = new Float32Array(this.bars);
     this.peaks = new Float32Array(this.bars);
     this.phases = new Float32Array(this.bars);
+    this.hangs = new Float32Array(this.bars);
     this.zeros = new Float32Array(this.bars);
+    this.lastTime = 0;
     this.cssWidth = 0;
     this.cssHeight = 0;
     this.simulated = false;
@@ -65,7 +76,9 @@ export class Visualizer {
       this.source = this.context.createMediaElementSource(audio);
       this.analyser = this.context.createAnalyser();
       this.analyser.fftSize = FFT_SIZE;
-      this.analyser.smoothingTimeConstant = 0.72;
+      this.analyser.smoothingTimeConstant = 0.82;
+      this.analyser.minDecibels = MIN_DB;
+      this.analyser.maxDecibels = MAX_DB;
 
       this.source.connect(this.analyser);
       this.analyser.connect(this.context.destination);
@@ -86,6 +99,7 @@ export class Visualizer {
   start() {
     if (this.running) return;
     this.running = true;
+    this.lastTime = 0;
     this.resume();
     this.frame = requestAnimationFrame(this.tick);
   }
@@ -114,6 +128,7 @@ export class Visualizer {
       this.values = new Float32Array(target);
       this.peaks = new Float32Array(target);
       this.phases = new Float32Array(target);
+      this.hangs = new Float32Array(target);
       this.zeros = new Float32Array(target);
       for (let i = 0; i < target; i++) this.phases[i] = Math.random() * Math.PI * 2;
     }
@@ -135,14 +150,19 @@ export class Visualizer {
       const from = Math.min(binCount - 1, Math.floor((lowHz / nyquist) * binCount));
       const to = Math.min(binCount - 1, Math.max(from + 1, Math.ceil((highHz / nyquist) * binCount)));
 
+      let sum = 0;
       let peak = 0;
       for (let bin = from; bin < to; bin++) {
+        sum += this.bins[bin];
         if (this.bins[bin] > peak) peak = this.bins[bin];
       }
 
-      // Music rolls off with frequency; tilt so the top end stays visible.
-      const tilt = 1 + (i / this.bars) * 0.85;
-      out[i] = Math.min(1, (peak / 255) * tilt);
+      // Averaging with a little peak mixed in is steadier than peak alone.
+      const level = (sum / (to - from)) * 0.65 + peak * 0.35;
+
+      // Music rolls off with frequency, but a strong tilt just saturates.
+      const tilt = 1 + (i / this.bars) * 0.3;
+      out[i] = Math.min(1, Math.max(0, (level / 255) * tilt - 0.04));
     }
 
     return out;
@@ -154,9 +174,9 @@ export class Visualizer {
 
     for (let i = 0; i < this.bars; i++) {
       const position = i / this.bars;
-      const slow = Math.sin(time * 0.0012 + this.phases[i]);
-      const fast = Math.sin(time * 0.0067 + this.phases[i] * 2.3);
-      const beat = Math.max(0, Math.sin(time * 0.0042)) ** 3;
+      const slow = Math.sin(time * 0.0007 + this.phases[i]);
+      const fast = Math.sin(time * 0.0031 + this.phases[i] * 2.3);
+      const beat = Math.max(0, Math.sin(time * 0.0026)) ** 3;
 
       const shape = (1 - position) ** 0.65;
       const wobble = 0.5 + 0.28 * slow + 0.2 * fast;
@@ -170,6 +190,10 @@ export class Visualizer {
   tick(time) {
     if (!this.running) return;
 
+    // Clamped so a backgrounded tab does not resume with one giant jump.
+    const dt = Math.min(0.05, this.lastTime ? (time - this.lastTime) / 1000 : 0.016);
+    this.lastTime = time;
+
     const playing = this.audio && !this.audio.paused;
     const targets = !playing
       ? this.zeros
@@ -177,14 +201,27 @@ export class Visualizer {
         ? this.simulate(time)
         : this.sampleSpectrum();
 
+    const attack = 1 - Math.exp(-dt / ATTACK_TAU);
+    const release = 1 - Math.exp(-dt / RELEASE_TAU);
+    const fall = PEAK_FALL_PER_SEC * dt;
+
     let bass = 0;
     const bassBars = Math.max(1, Math.round(this.bars * 0.18));
 
     for (let i = 0; i < this.bars; i++) {
       const target = targets[i];
-      this.values[i] = target > this.values[i] ? target : this.values[i] * RELEASE;
+      const rate = target > this.values[i] ? attack : release;
+      this.values[i] += (target - this.values[i]) * rate;
 
-      this.peaks[i] = Math.max(this.values[i], this.peaks[i] - PEAK_GRAVITY);
+      if (this.values[i] >= this.peaks[i]) {
+        this.peaks[i] = this.values[i];
+        this.hangs[i] = PEAK_HANG;
+      } else if (this.hangs[i] > 0) {
+        this.hangs[i] -= dt;
+      } else {
+        this.peaks[i] = Math.max(this.values[i], this.peaks[i] - fall);
+      }
+
       if (i < bassBars) bass += this.values[i];
     }
 
@@ -226,7 +263,7 @@ export class Visualizer {
       ctx.globalAlpha = 1;
       ctx.fillStyle = gradient;
       ctx.shadowColor = mid;
-      ctx.shadowBlur = 10 * value;
+      ctx.shadowBlur = 7 * value;
 
       roundedTop(ctx, x, floor - barHeight, barWidth, barHeight, radius);
       ctx.fill();

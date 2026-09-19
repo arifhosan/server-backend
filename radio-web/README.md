@@ -11,9 +11,10 @@ Already pointed at the live API in `assets/js/config.js`:
 window.TUNER_CONFIG = { apiBaseUrl: 'https://api.server.arifhosan.me', apiPrefix: '/radio' };
 ```
 
-Nothing to configure before deploying. Two overrides exist if you need them:
-the Settings sheet in the app (saved per browser) and a `?api=` query string
-for testing against another host. An empty `apiBaseUrl` means "same origin".
+Nothing to configure before deploying, and there is no API field in the UI --
+`config.js` is the only place it lives. A `?api=` query string still works as a
+development override; it is not persisted. An empty `apiBaseUrl` means "same
+origin".
 
 ### CORS
 
@@ -77,6 +78,7 @@ It talks to the deployed API, so no local backend is needed. Add
 | --- | --- |
 | `index.html` | App shell, inline SVG icon sprite |
 | `assets/css/app.css` | Design tokens, components, responsive rules |
+| `assets/css/theme-2010.css` | The 2010 theme |
 | `assets/js/config.js` | Deployment config, loaded before the modules |
 | `assets/js/api.js` | API base resolution and endpoint wrappers |
 | `assets/js/player.js` | Audio element, reconnect watchdog, SSE titles, media keys |
@@ -99,10 +101,19 @@ against a deployment with no database.
 
 ## Design notes
 
-The look is a lit analog tuner: warm near-black, a single amber accent for the
-dial glow, film grain over flat fills, and monospaced readouts for bitrate,
-codec and elapsed time. Light and dark both ship; the theme follows the system
-and the toggle overrides it.
+The default look is a lit analog tuner: warm near-black, a single amber accent
+for the dial glow, film grain over flat fills, and monospaced readouts for
+bitrate, codec and elapsed time.
+
+Three themes ship, cycled by the sidebar button or picked in Settings. The
+default follows the system.
+
+- **Midnight** - the dark tuner.
+- **Daylight** - the same design on warm paper.
+- **2010** - Dhaka when FM radio was everywhere. Bottle green and red from the
+  flag, glossy beveled buttons, hard 1px borders, a cross-stitch tiled
+  background and Tahoma, with Bengali set in Hind Siliguri. The spectrum runs
+  green to red in this theme.
 
 The now-playing view is the centrepiece — a log-scaled spectrum with fast
 attack, slow release, peak-hold caps and a reflection, over a background that

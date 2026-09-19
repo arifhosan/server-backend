@@ -1,41 +1,13 @@
-const STORAGE_KEY = 'tuner.apiBase';
-
 const defaults = window.TUNER_CONFIG ?? { apiBaseUrl: '', apiPrefix: '/radio' };
 
-function fromQuery() {
-  const value = new URLSearchParams(location.search).get('api');
-  if (value === null) return null;
-  save(value);
-  return value;
-}
-
-function stored() {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function save(value) {
-  try {
-    if (value) localStorage.setItem(STORAGE_KEY, value);
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* private mode: the value lasts for this page load only */
-  }
-}
-
-let base = (fromQuery() ?? stored() ?? defaults.apiBaseUrl ?? '').replace(/\/+$/, '');
+/* `?api=` stays as a development escape hatch. It is not persisted and there
+   is no UI for it: deployments get their backend from config.js. */
+const override = new URLSearchParams(location.search).get('api');
+const base = (override ?? defaults.apiBaseUrl ?? '').trim().replace(/\/+$/, '');
 
 export const api = {
   get base() {
     return base;
-  },
-
-  setBase(value) {
-    base = (value ?? '').trim().replace(/\/+$/, '');
-    save(base);
   },
 
   url(path, params) {
@@ -76,11 +48,11 @@ export const api = {
   },
 
   streamUrl(uuid) {
-    return `${this.url(`/stream/${encodeURIComponent(uuid)}`)}`;
+    return this.url(`/stream/${encodeURIComponent(uuid)}`);
   },
 
   eventsUrl(uuid) {
-    return `${this.url(`/stream/${encodeURIComponent(uuid)}/events`)}`;
+    return this.url(`/stream/${encodeURIComponent(uuid)}/events`);
   },
 
   nowPlaying(uuid) {

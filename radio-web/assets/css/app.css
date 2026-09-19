@@ -99,6 +99,9 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* clip, not hidden: this must never create a scroll container that would
+     break position: sticky on the sidebar and top bar. */
+  overflow-x: clip;
 }
 
 body {
@@ -110,7 +113,7 @@ body {
   line-height: 1.5;
   letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Warm vignette so the flat background reads as a lit surface. */
@@ -797,9 +800,14 @@ button {
   display: flex;
   gap: 5px;
   margin-top: 7px;
+  /* Without this the nowrap tags below widen the card and scroll the page. */
+  overflow: hidden;
 }
 
 .tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   padding: 2px 7px;
   border-radius: var(--r-sm);
   background: var(--bg-sunken);
@@ -809,6 +817,12 @@ button {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The codec/bitrate chip is short and worth keeping whole. */
+.tag:first-child {
+  flex: none;
 }
 
 .card-fav {
@@ -1176,6 +1190,13 @@ button {
   gap: 10px;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.player-meta .readout {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==========================================================================
@@ -1452,10 +1473,12 @@ input[type='range']::-moz-range-thumb {
 }
 
 .stage-name {
+  max-width: 100%;
   font-size: clamp(22px, 4.4vw, 34px);
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.12;
+  overflow-wrap: anywhere;
 }
 
 .stage-title {

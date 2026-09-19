@@ -1,0 +1,291 @@
+/* ==========================================================================
+   Theme: 2010
+
+   Dhaka when FM radio was everywhere - Foorti on 88.0, Today on 89.6 - drawn
+   the way the web looked then: bottle green and red, glossy beveled buttons,
+   hard 1px borders, a tiled background, Tahoma.
+   ========================================================================== */
+
+:root[data-theme='2010'] {
+  --bg: #efe9dc;
+  --bg-raised: #fbf8f1;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f6f2e7;
+  --bg-sunken: #e6dfcd;
+
+  --line: #cfc6b0;
+  --line-strong: #ab9f84;
+
+  --text: #1d2a22;
+  --text-dim: #4a5a50;
+  --text-muted: #77857a;
+
+  --accent: #006a4e;
+  --accent-hot: #19a06f;
+  --accent-deep: #f42a41;
+  --accent-ink: #ffffff;
+
+  --live: #0f7a3d;
+  --warn: #c8631a;
+  --bad: #c1272d;
+
+  --shadow-sm: 0 1px 1px rgb(40 60 48 / 0.2);
+  --shadow-md: 0 2px 5px rgb(40 60 48 / 0.24);
+  --shadow-lg: 0 6px 18px rgb(40 60 48 / 0.34);
+  --glow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.75);
+
+  --r-sm: 3px;
+  --r-md: 5px;
+  --r-lg: 6px;
+  --r-xl: 8px;
+
+  /* Latin from Tahoma, Bengali from Hind Siliguri, resolved per glyph. */
+  --sans: Tahoma, 'Hind Siliguri', Verdana, Geneva, sans-serif;
+
+  color-scheme: light;
+}
+
+/* Cross-stitch tiling in place of film grain. */
+:root[data-theme='2010'] body::before {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cg fill='%23006a4e' fill-opacity='0.07'%3E%3Crect x='0' y='0' width='2' height='2'/%3E%3Crect x='8' y='8' width='2' height='2'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #e4ddcd, #efe9dc 220px);
+}
+
+:root[data-theme='2010'] .grain {
+  display: none;
+}
+
+/* ------------------------------------------------------------ glossy chrome */
+
+:root[data-theme='2010'] .sidebar,
+:root[data-theme='2010'] .topbar {
+  border-color: #00432f;
+  background: linear-gradient(180deg, #018a64 0%, #007754 48%, #00644a 52%, #005440 100%);
+  backdrop-filter: none;
+}
+
+:root[data-theme='2010'] .topbar {
+  border-bottom: 3px solid var(--accent-deep);
+}
+
+:root[data-theme='2010'] .sidebar {
+  border-right: 3px solid var(--accent-deep);
+}
+
+:root[data-theme='2010'] .sidebar .nav-item,
+:root[data-theme='2010'] .sidebar-title,
+:root[data-theme='2010'] .brand-text strong,
+:root[data-theme='2010'] .select-label {
+  color: #eaf5ef;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.35);
+}
+
+:root[data-theme='2010'] .nav-item:hover,
+:root[data-theme='2010'] .nav-item[aria-current='page'] {
+  border: 1px solid #a8780a;
+  background: linear-gradient(180deg, #ffd24a, #f0a800);
+  color: #3a2a00;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.5);
+  box-shadow: var(--edge), var(--shadow-sm);
+}
+
+:root[data-theme='2010'] .nav-item[aria-current='page'] .icon {
+  color: #7a4f00;
+}
+
+:root[data-theme='2010'] .nav-count {
+  background: rgb(0 0 0 / 0.25);
+  color: #fff;
+}
+
+:root[data-theme='2010'] .sidebar-foot {
+  border-top-color: rgb(255 255 255 / 0.2);
+}
+
+/* Flag echo: a red disc on a green field. */
+:root[data-theme='2010'] .brand-mark {
+  border-color: #00432f;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #018a64, #005440);
+}
+
+:root[data-theme='2010'] .brand-dial {
+  background: #f42a41;
+  box-shadow: none;
+}
+
+:root[data-theme='2010'] .brand-text small {
+  font-size: 0;
+  color: #bfe3d2;
+}
+
+:root[data-theme='2010'] .brand-text small::after {
+  content: 'এফএম রেডিও';
+  font-family: 'Hind Siliguri', Tahoma, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ----------------------------------------------------------- beveled inputs */
+
+:root[data-theme='2010'] .btn,
+:root[data-theme='2010'] .btn-ghost,
+:root[data-theme='2010'] .chip {
+  border: 1px solid #9aa89d;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffffff 0%, #eae3d3 50%, #ded5c1 51%, #f0ebe0 100%);
+  color: #26332b;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.8);
+  box-shadow: var(--edge), var(--shadow-sm);
+}
+
+:root[data-theme='2010'] .btn {
+  border-color: #00432f;
+  background: linear-gradient(180deg, #19a06f 0%, #008259 50%, #00714d 51%, #00875d 100%);
+  color: #fff;
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.35);
+}
+
+:root[data-theme='2010'] .btn:active,
+:root[data-theme='2010'] .btn-ghost:active {
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.28);
+}
+
+:root[data-theme='2010'] .chip[aria-pressed='true'] {
+  border-color: #8c1f13;
+  background: linear-gradient(180deg, #f9705f 0%, #e03a25 50%, #cc2f1d 51%, #e2513c 100%);
+  color: #fff;
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.3);
+}
+
+:root[data-theme='2010'] .searchbar {
+  border: 1px solid #7e8f84;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: inset 0 2px 3px rgb(0 0 0 / 0.14);
+}
+
+:root[data-theme='2010'] .searchbar:focus-within {
+  border-color: #ffd24a;
+  box-shadow: inset 0 2px 3px rgb(0 0 0 / 0.14), 0 0 0 2px rgb(255 210 74 / 0.6);
+}
+
+:root[data-theme='2010'] .select select,
+:root[data-theme='2010'] .field select,
+:root[data-theme='2010'] .field input {
+  border: 1px solid #7e8f84;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #fff, #ece6d9);
+}
+
+/* -------------------------------------------------------------- beveled boxes */
+
+:root[data-theme='2010'] .card,
+:root[data-theme='2010'] .skeleton,
+:root[data-theme='2010'] .sheet,
+:root[data-theme='2010'] .toast {
+  border: 1px solid #c3b99f;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #fff, #faf6ec);
+  box-shadow: var(--edge), var(--shadow-sm);
+}
+
+:root[data-theme='2010'] .card[data-playing='true'] {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #f2fbf6, #e2f3ea);
+}
+
+:root[data-theme='2010'] .tag {
+  border: 1px solid #d7cdb5;
+  background: #f4efe2;
+  font-family: Tahoma, sans-serif;
+  text-transform: none;
+}
+
+:root[data-theme='2010'] .art {
+  border: 1px solid rgb(0 0 0 / 0.28);
+  border-radius: 3px;
+}
+
+:root[data-theme='2010'] .badge {
+  border-radius: 3px;
+  background: #f4efe2;
+}
+
+/* ----------------------------------------------------------------- hero */
+
+:root[data-theme='2010'] .hero {
+  border: 1px solid #00432f;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.22) 0%, rgb(255 255 255 / 0.04) 50%, transparent 51%),
+    linear-gradient(180deg, #018a64, #00543f);
+  color: #f2fbf6;
+  box-shadow: var(--edge), var(--shadow-md);
+}
+
+:root[data-theme='2010'] .hero::after {
+  opacity: 0.25;
+}
+
+:root[data-theme='2010'] .eyebrow {
+  color: #ffd24a;
+}
+
+:root[data-theme='2010'] .hero-sub {
+  color: #cde9dc;
+}
+
+:root[data-theme='2010'] .hero-dial {
+  border: 1px solid #00432f;
+  background: radial-gradient(circle at 50% 38%, #fdf8e8, #d8cdae 74%);
+}
+
+/* --------------------------------------------------------- player and stage */
+
+:root[data-theme='2010'] .player {
+  border-top: 3px solid var(--accent-deep);
+  background: linear-gradient(180deg, #fbf8f1, #e7e0cf);
+  backdrop-filter: none;
+}
+
+:root[data-theme='2010'] .player::before {
+  display: none;
+}
+
+:root[data-theme='2010'] .ctl-primary {
+  border-color: #00432f;
+  background: linear-gradient(180deg, #19a06f 0%, #008259 50%, #00714d 51%, #00875d 100%);
+  color: #fff;
+  box-shadow: var(--edge), var(--shadow-sm);
+}
+
+:root[data-theme='2010'] .ctl-primary:hover {
+  background: linear-gradient(180deg, #24b57e 0%, #009063 50%, #007d55 51%, #009667 100%);
+}
+
+:root[data-theme='2010'] .stage,
+:root[data-theme='2010'] .stage-bg {
+  background:
+    radial-gradient(60rem 34rem at 50% 108%, rgb(0 106 78 / 0.26), transparent 64%),
+    linear-gradient(180deg, #e2dbc9, #efe9dc 46%);
+}
+
+:root[data-theme='2010'] .tabbar {
+  border-top: 3px solid var(--accent-deep);
+  background: linear-gradient(180deg, #018a64, #00553f);
+  backdrop-filter: none;
+}
+
+:root[data-theme='2010'] .tab {
+  color: #cde9dc;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.35);
+}
+
+:root[data-theme='2010'] .tab[aria-current='page'] {
+  color: #ffd24a;
+}
