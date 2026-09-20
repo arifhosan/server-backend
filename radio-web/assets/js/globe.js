@@ -1,3 +1,5 @@
+import { WORLD_ARCS } from './world.js';
+
 const DEG = Math.PI / 180;
 
 const AUTO_SPIN_DEG_PER_SEC = 4.5;
@@ -5,8 +7,9 @@ const SPIN_RESUME_MS = 2600;
 const DRAG_SENSITIVITY = 0.32;
 const MAX_TILT = 78;
 const MIN_ZOOM = 0.8;
-const MAX_ZOOM = 2.6;
+const MAX_ZOOM = 7;
 const CLICK_SLOP_PX = 6;
+const HOVER_RADIUS_PX = 16;
 
 /* Alpha is a state change, so points are bucketed by depth and each bucket is
    drawn in one pass instead of setting alpha per point. */
@@ -15,14 +18,17 @@ const DEPTH_TIERS = 4;
 const SPRITE_PX = 14;
 
 export class Globe {
-  constructor(canvas, { onPick, onHint } = {}) {
+  constructor(canvas, { onPick, onHint, onHover } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onPick = onPick;
     this.onHint = onHint;
+    this.onHover = onHover;
 
     this.lats = new Float32Array(0);
     this.lons = new Float32Array(0);
+    this.codes = [];
+    this.hover = null;
 
     this.rotation = -20;
     this.tilt = 18;
@@ -61,6 +67,11 @@ export class Globe {
     const count = codes?.length ?? Math.floor(points.length / 2);
     this.lats = new Float32Array(count);
     this.lons = new Float32Array(count);
+    this.codes = codes ?? [];
+    this.hitX = new Float32Array(count);
+    this.hitY = new Float32Array(count);
+    this.hitIndex = new Int32Array(count);
+    this.hitCount = 0;
 
     for (let i = 0; i < count; i++) {
       this.lats[i] = points[i * 2];
@@ -179,7 +190,13 @@ export class Globe {
     });
 
     canvas.addEventListener('pointermove', (event) => {
-      if (!this.dragging || !this.lastPointer) return;
+      if (!this.dragging) {
+        const rect = canvas.getBoundingClientRect();
+        this.trackHover(event.clientX - rect.left, event.clientY - rect.top);
+        return;
+      }
+
+      if (!this.lastPointer) return;
 
       const dx = event.clientX - this.lastPointer.x;
       const dy = event.clientY - this.lastPointer.y;
@@ -218,11 +235,16 @@ export class Globe {
       this.dragging = false;
     });
 
+    canvas.addEventListener('pointerleave', () => {
+      this.hover = null;
+      this.onHover?.(null);
+    });
+
     canvas.addEventListener(
       'wheel',
       (event) => {
         event.preventDefault();
-        const step = event.deltaY > 0 ? 0.9 : 1.1;
+        const step = event.deltaY > 0 ? 0.93 : 1.075;
         this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom * step));
         this.lastInteraction = performance.now();
       },
@@ -263,8 +285,10 @@ export class Globe {
     const r = this.radius;
     this.drawSphere(r);
     this.drawGraticule(r);
+    this.drawLand(r);
     this.drawPoints(r);
     this.drawSelection(r);
+    this.drawHover(r);
   }
 
   drawSphere(r) {
@@ -349,22 +373,107 @@ export class Globe {
     ctx.stroke();
   }
 
+  /** Coastlines and country borders, drawn from the vendored arcs. */
+  drawLand(r) {
+    const { ctx, cx, cy, colors } = this;
+
+    ctx.strokeStyle = withAlpha(colors.line, 0.95);
+    ctx.lineWidth = 1;
+    ctx.lineJoin = 'round';
+
+    for (const arc of WORLD_ARCS) {
+      ctx.beginPath();
+      let drawing = false;
+
+      for (let i = 0; i < arc.length; i += 2) {
+        const point = this.project(arc[i + 1], arc[i]);
+
+        if (point.z <= 0) {
+          drawing = false;
+          continue;
+        }
+
+        const x = cx + point.x * r;
+        const y = cy - point.y * r;
+
+        if (drawing) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+
+        drawing = true;
+      }
+
+      ctx.stroke();
+    }
+  }
+
+  /** Nearest station dot under the cursor, using last frame's screen positions. */
+  trackHover(px, py) {
+    let best = -1;
+    let bestDistance = HOVER_RADIUS_PX * HOVER_RADIUS_PX;
+
+    for (let i = 0; i < this.hitCount; i++) {
+      const dx = this.hitX[i] - px;
+      const dy = this.hitY[i] - py;
+      const distance = dx * dx + dy * dy;
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    }
+
+    const index = best === -1 ? null : this.hitIndex[best];
+    const changed = index !== (this.hover?.index ?? null);
+
+    this.hover = index === null ? null : { index, x: this.hitX[best], y: this.hitY[best] };
+
+    if (changed) {
+      this.onHover?.(
+        index === null
+          ? null
+          : { code: this.codes[index], lat: this.lats[index], lon: this.lons[index] },
+      );
+    }
+  }
+
+  drawHover(r) {
+    if (!this.hover) return;
+
+    const { ctx, colors } = this;
+    ctx.strokeStyle = colors.hot;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(this.hover.x, this.hover.y, 9, 0, Math.PI * 2);
+    ctx.stroke();
+
+    void r;
+  }
+
   drawPoints(r) {
     const { ctx, cx, cy } = this;
     const count = this.lats.length;
     if (!count || !this.sprite) return;
 
     this.tierCount.fill(0);
+    this.hitCount = 0;
 
     for (let i = 0; i < count; i++) {
       const point = this.project(this.lats[i], this.lons[i]);
       if (point.z <= 0.02) continue;
 
+      const x = cx + point.x * r;
+      const y = cy - point.y * r;
+
       const tier = Math.min(DEPTH_TIERS - 1, Math.floor(point.z * DEPTH_TIERS));
       const slot = this.tierCount[tier]++;
 
-      this.tierX[tier][slot] = cx + point.x * r;
-      this.tierY[tier][slot] = cy - point.y * r;
+      this.tierX[tier][slot] = x;
+      this.tierY[tier][slot] = y;
+
+      this.hitX[this.hitCount] = x;
+      this.hitY[this.hitCount] = y;
+      this.hitIndex[this.hitCount] = i;
+      this.hitCount += 1;
     }
 
     ctx.globalCompositeOperation = 'lighter';

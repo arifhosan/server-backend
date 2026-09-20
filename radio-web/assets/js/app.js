@@ -18,6 +18,7 @@ import {
 const SEARCH_DEBOUNCE_MS = 340;
 const GENRE_COUNT = 18;
 const GLOBE_PICK_RADIUS_M = 320_000;
+const GLOBE_MIN_RADIUS_M = 45_000;
 const GLOBE_PICK_LIMIT = 24;
 
 const BROWSE_ROWS = [
@@ -70,6 +71,11 @@ const globe = new Globe(dom.globeCanvas, {
   onPick: (point) => void pickPlace(point),
   onHint: (text) => {
     dom.globeHint.textContent = text;
+  },
+  onHover: (point) => {
+    dom.globeReadout.textContent = point
+      ? `${point.code} - ${formatPlace(point.lat, point.lon)}`
+      : 'drag to spin, scroll to zoom';
   },
 });
 
@@ -626,7 +632,7 @@ async function openGlobe() {
     geoLoaded = true;
 
     dom.globeMeta.textContent = `${geo.count.toLocaleString()} stations mapped`;
-    dom.globeReadout.textContent = 'drag to spin';
+    dom.globeReadout.textContent = 'drag to spin, scroll to zoom';
   } catch (error) {
     dom.globeMeta.textContent = 'unavailable';
     dom.globeHint.textContent = `No station map: ${error.message}`;
@@ -639,7 +645,12 @@ async function openGlobe() {
   }
 }
 
+function pickRadius() {
+  return Math.max(GLOBE_MIN_RADIUS_M, Math.round(GLOBE_PICK_RADIUS_M / globe.zoom));
+}
+
 async function pickPlace({ lat, lon }) {
+  const radius = pickRadius();
   dom.globeTitle.textContent = formatPlace(lat, lon);
   dom.globeReadout.textContent = formatPlace(lat, lon);
   dom.globeMeta.textContent = 'listening in';
@@ -652,14 +663,14 @@ async function pickPlace({ lat, lon }) {
     const stations = await api.search({
       lat: lat.toFixed(4),
       lon: lon.toFixed(4),
-      radius: GLOBE_PICK_RADIUS_M,
+      radius,
       limit: GLOBE_PICK_LIMIT,
     });
 
     if (state.lastQuery !== token) return;
 
     state.queue = stations;
-    dom.globeMeta.textContent = `${stations.length} within ${GLOBE_PICK_RADIUS_M / 1000} km`;
+    dom.globeMeta.textContent = `${stations.length} within ${Math.round(radius / 1000)} km`;
 
     if (stations.length === 0) {
       dom.globeResults.replaceChildren(
