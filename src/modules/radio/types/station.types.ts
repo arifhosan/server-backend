@@ -17,6 +17,16 @@ export interface RadioBrowserStation {
   hls: number;
   lastcheckok: number;
   clickcount: number;
+  geo_lat: number | null;
+  geo_long: number | null;
+  geo_distance: number | null;
+}
+
+/** Flat lat/lon pairs plus a parallel country code per point. */
+export interface GeoPoints {
+  count: number;
+  points: number[];
+  codes: string[];
 }
 
 export interface RadioBrowserNameCount {

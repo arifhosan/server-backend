@@ -2,6 +2,8 @@ import { Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   MaxLength,
@@ -60,4 +62,21 @@ export class SearchStationsDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  lat?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  lon?: number;
+
+  /** Metres. Only used alongside lat and lon. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  radius?: number;
 }

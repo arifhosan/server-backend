@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   Res,
@@ -20,6 +22,7 @@ import { FavouritesService, Preset } from './services/favourites.service';
 import { StationDirectoryService } from './services/station-directory.service';
 import { StreamHubService } from './services/stream-hub.service';
 import {
+  GeoPoints,
   RadioBrowserNameCount,
   StationStreamState,
   StationSummary,
@@ -43,6 +46,13 @@ export class RadioController {
   @Get('stations/search')
   search(@Query() query: SearchStationsDto): Promise<StationSummary[]> {
     return this.directory.search(query);
+  }
+
+  @Get('stations/geo')
+  geo(
+    @Query('limit', new DefaultValuePipe(12000), ParseIntPipe) limit: number,
+  ): Promise<GeoPoints> {
+    return this.directory.geoPoints(limit);
   }
 
   @Get('stations/:uuid')
