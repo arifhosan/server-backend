@@ -97,6 +97,11 @@
   margin: 0;
 }
 
+/* Beats any component display rule, which would otherwise defeat [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   /* clip, not hidden: this must never create a scroll container that would
@@ -1155,6 +1160,8 @@ button {
   gap: 12px;
   align-items: center;
   min-width: 0;
+  /* The expand button sits underneath the bar; let taps reach it. */
+  pointer-events: none;
 }
 
 .player-text {
@@ -1732,6 +1739,21 @@ input[type='range']::-moz-range-thumb {
   .player-inner {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
+    padding-top: 8px;
+  }
+
+  /* Sheet handle: says "swipe me up" the way a phone user expects. */
+  .player::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 34px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line-strong);
+    transform: translateX(-50%);
+    pointer-events: none;
   }
 
   /* On a phone the bar is a launcher for the stage, so it keeps play only. */

@@ -563,6 +563,36 @@ function closeStage() {
 el('playerExpand').addEventListener('click', openStage);
 el('stageClose').addEventListener('click', closeStage);
 
+/** Vertical swipe, ignoring anything that starts on a control. */
+function onSwipe(element, { up, down }) {
+  let startY = null;
+
+  element.addEventListener(
+    'touchstart',
+    (event) => {
+      startY = event.target.closest('input, button, a') ? null : event.touches[0].clientY;
+    },
+    { passive: true },
+  );
+
+  element.addEventListener(
+    'touchend',
+    (event) => {
+      if (startY === null) return;
+
+      const travel = event.changedTouches[0].clientY - startY;
+      if (travel < -36) up?.();
+      else if (travel > 56) down?.();
+
+      startY = null;
+    },
+    { passive: true },
+  );
+}
+
+onSwipe(dom.player, { up: openStage });
+onSwipe(dom.stage, { down: closeStage });
+
 visualizer.onEnergy((energy) => {
   dom.stageBg.style.opacity = String(0.7 + energy * 0.3);
   globe.setEnergy(energy);
@@ -582,6 +612,8 @@ el('stageTimer').addEventListener('click', () => dom.settings.showModal());
 let geoLoaded = false;
 
 async function openGlobe() {
+  // The canvas measures 0x0 while the panel is hidden, so size it on reveal.
+  globe.resize();
   globe.start();
   if (geoLoaded) return;
 
@@ -597,10 +629,11 @@ async function openGlobe() {
     dom.globeReadout.textContent = 'drag to spin';
   } catch (error) {
     dom.globeMeta.textContent = 'unavailable';
+    dom.globeHint.textContent = `No station map: ${error.message}`;
     dom.globeResults.replaceChildren(
       emptyState(
         'The map feed is not available',
-        `${error.message}. This view needs the /radio/stations/geo endpoint, which may not be deployed yet.`,
+        `${error.message}. This view needs /radio/stations/geo, which this backend does not serve yet.`,
       ),
     );
   }
