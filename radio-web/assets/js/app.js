@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { Globe } from './globe.js';
 import { Player } from './player.js';
 import { store } from './store.js';
 import { Visualizer } from './visualizer.js';
@@ -16,6 +17,8 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 340;
 const GENRE_COUNT = 18;
+const GLOBE_PICK_RADIUS_M = 320_000;
+const GLOBE_PICK_LIMIT = 24;
 
 const BROWSE_ROWS = [
   { title: 'Most loved', query: { order: 'votes', limit: 12 } },
@@ -31,6 +34,7 @@ const dom = {
   panels: {
     browse: el('panelBrowse'),
     search: el('panelSearch'),
+    globe: el('panelGlobe'),
     favourites: el('panelFavourites'),
   },
   browseRows: el('browseRows'),
@@ -52,10 +56,22 @@ const dom = {
   settings: el('settingsDialog'),
   timerSelect: el('timerSelect'),
   viz: el('viz'),
+  globeCanvas: el('globe'),
+  globeResults: el('globeResults'),
+  globeTitle: el('globeTitle'),
+  globeMeta: el('globeMeta'),
+  globeHint: el('globeHint'),
+  globeReadout: el('globeReadout'),
 };
 
 const player = new Player(el('audio'));
 const visualizer = new Visualizer(dom.viz);
+const globe = new Globe(dom.globeCanvas, {
+  onPick: (point) => void pickPlace(point),
+  onHint: (text) => {
+    dom.globeHint.textContent = text;
+  },
+});
 
 const state = {
   view: 'browse',
@@ -78,6 +94,8 @@ function applyTheme(theme) {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', THEME_COLORS[name]);
+
+  globe?.refreshTheme();
 }
 
 applyTheme(
@@ -97,7 +115,7 @@ el('themeSelect').addEventListener('change', (event) => applyTheme(event.target.
 
 function route() {
   const hash = location.hash.replace('#/', '') || 'browse';
-  const view = ['browse', 'search', 'favourites'].includes(hash) ? hash : 'browse';
+  const view = ['browse', 'search', 'globe', 'favourites'].includes(hash) ? hash : 'browse';
   state.view = view;
 
   for (const [name, panel] of Object.entries(dom.panels)) {
@@ -111,6 +129,9 @@ function route() {
 
   if (view === 'favourites') renderFavourites();
   if (view === 'search') dom.searchInput.focus({ preventScroll: true });
+
+  if (view === 'globe') openGlobe();
+  else globe.stop();
 }
 
 window.addEventListener('hashchange', route);
@@ -338,7 +359,10 @@ async function loadFilters() {
     const countries = await api.countries();
     const fragment = document.createDocumentFragment();
 
-    for (const country of countries.slice(0, 140)) {
+    // Upstream returns these by station count; a picker wants them A to Z.
+    const sorted = [...countries].sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const country of sorted) {
       const option = document.createElement('option');
       option.value = country.name;
       option.textContent = `${country.name} (${country.stationcount})`;
@@ -541,6 +565,7 @@ el('stageClose').addEventListener('click', closeStage);
 
 visualizer.onEnergy((energy) => {
   dom.stageBg.style.opacity = String(0.7 + energy * 0.3);
+  globe.setEnergy(energy);
 });
 
 visualizer.connect(el('audio'), { sample: false });
@@ -551,6 +576,78 @@ document.addEventListener('visibilitychange', () => {
 });
 
 el('stageTimer').addEventListener('click', () => dom.settings.showModal());
+
+/* ------------------------------------------------------------------- globe */
+
+let geoLoaded = false;
+
+async function openGlobe() {
+  globe.start();
+  if (geoLoaded) return;
+
+  // Fewer points on a phone: every visible one is a drawImage per frame.
+  const limit = window.matchMedia('(max-width: 720px)').matches ? 3500 : 9000;
+
+  try {
+    const geo = await api.geoPoints(limit);
+    globe.setPoints(geo.points, geo.codes);
+    geoLoaded = true;
+
+    dom.globeMeta.textContent = `${geo.count.toLocaleString()} stations mapped`;
+    dom.globeReadout.textContent = 'drag to spin';
+  } catch (error) {
+    dom.globeMeta.textContent = 'unavailable';
+    dom.globeResults.replaceChildren(
+      emptyState(
+        'The map feed is not available',
+        `${error.message}. This view needs the /radio/stations/geo endpoint, which may not be deployed yet.`,
+      ),
+    );
+  }
+}
+
+async function pickPlace({ lat, lon }) {
+  dom.globeTitle.textContent = formatPlace(lat, lon);
+  dom.globeReadout.textContent = formatPlace(lat, lon);
+  dom.globeMeta.textContent = 'listening in';
+  dom.globeResults.replaceChildren(skeletons(5));
+
+  const token = Symbol('pick');
+  state.lastQuery = token;
+
+  try {
+    const stations = await api.search({
+      lat: lat.toFixed(4),
+      lon: lon.toFixed(4),
+      radius: GLOBE_PICK_RADIUS_M,
+      limit: GLOBE_PICK_LIMIT,
+    });
+
+    if (state.lastQuery !== token) return;
+
+    state.queue = stations;
+    dom.globeMeta.textContent = `${stations.length} within ${GLOBE_PICK_RADIUS_M / 1000} km`;
+
+    if (stations.length === 0) {
+      dom.globeResults.replaceChildren(
+        emptyState('Quiet out here', 'No mapped stations nearby. Try a lit-up part of the globe.'),
+      );
+      return;
+    }
+
+    paint(dom.globeResults, stations);
+  } catch (error) {
+    if (state.lastQuery !== token) return;
+    dom.globeMeta.textContent = 'failed';
+    dom.globeResults.replaceChildren(emptyState('Could not load that place', error.message));
+  }
+}
+
+function formatPlace(lat, lon) {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(1)}°${ns} ${Math.abs(lon).toFixed(1)}°${ew}`;
+}
 
 /* ---------------------------------------------------------------- settings */
 

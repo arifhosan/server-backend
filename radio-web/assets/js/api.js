@@ -47,6 +47,10 @@ export const api = {
     return this.json('/tags');
   },
 
+  geoPoints(limit) {
+    return this.json('/stations/geo', { limit });
+  },
+
   streamUrl(uuid) {
     return this.url(`/stream/${encodeURIComponent(uuid)}`);
   },

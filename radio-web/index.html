@@ -18,6 +18,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Hind+Siliguri:wght@400;500;600;700&display=swap"
     />
     <link rel="stylesheet" href="assets/css/app.css" />
+    <link rel="stylesheet" href="assets/css/globe.css" />
     <link rel="stylesheet" href="assets/css/theme-2010.css" />
   </head>
 
@@ -78,6 +79,11 @@
         <circle cx="16.4" cy="14.1" r="2.7" fill="none" stroke="currentColor" stroke-width="1.7" />
         <path d="M6.2 12.2h4.6M6.2 16h4.6M7.4 8 16 4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
       </symbol>
+      <symbol id="ic-globe" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path d="M3.3 9.2h17.4M3.3 14.8h17.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+      </symbol>
       <symbol id="ic-settings" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
         <path
@@ -131,6 +137,10 @@
           <a class="nav-item" href="#/search" data-view="search">
             <svg class="icon" aria-hidden="true"><use href="#ic-search" /></svg>
             <span>Search</span>
+          </a>
+          <a class="nav-item" href="#/globe" data-view="globe">
+            <svg class="icon" aria-hidden="true"><use href="#ic-globe" /></svg>
+            <span>Globe</span>
           </a>
           <a class="nav-item" href="#/favourites" data-view="favourites">
             <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>
@@ -219,6 +229,24 @@
               <p class="panel-meta" id="searchMeta"></p>
             </div>
             <div class="grid" id="searchResults"></div>
+          </section>
+
+          <section class="panel panel-globe" id="panelGlobe" hidden>
+            <div class="globe-stage">
+              <canvas id="globe" class="globe-canvas"></canvas>
+              <div class="globe-overlay">
+                <p class="globe-hint" id="globeHint">Drag to spin. Tap anywhere to hear that part of the world.</p>
+                <p class="readout" id="globeReadout"></p>
+              </div>
+            </div>
+
+            <aside class="globe-panel">
+              <div class="panel-head">
+                <h2 class="panel-title" id="globeTitle">The world, lit up</h2>
+                <p class="panel-meta" id="globeMeta">loading stations</p>
+              </div>
+              <div class="grid grid-narrow" id="globeResults"></div>
+            </aside>
           </section>
 
           <section class="panel" id="panelFavourites" hidden>
@@ -346,6 +374,10 @@
       <a class="tab" href="#/search" data-view="search">
         <svg class="icon" aria-hidden="true"><use href="#ic-search" /></svg>
         <span>Search</span>
+      </a>
+      <a class="tab" href="#/globe" data-view="globe">
+        <svg class="icon" aria-hidden="true"><use href="#ic-globe" /></svg>
+        <span>Globe</span>
       </a>
       <a class="tab" href="#/favourites" data-view="favourites">
         <svg class="icon" aria-hidden="true"><use href="#ic-heart-outline" /></svg>

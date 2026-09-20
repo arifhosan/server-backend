@@ -1,0 +1,111 @@
+/* ==========================================================================
+   Globe view
+   ========================================================================== */
+
+.panel-globe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+  padding-top: 18px;
+}
+
+.globe-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(60rem 40rem at 50% 120%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
+    linear-gradient(180deg, var(--bg-sunken), var(--bg-raised));
+  box-shadow: var(--edge), var(--shadow-md);
+}
+
+.globe-canvas {
+  display: block;
+  width: 100%;
+  height: clamp(340px, 62vh, 620px);
+  cursor: grab;
+  touch-action: none;
+}
+
+.globe-canvas:active {
+  cursor: grabbing;
+}
+
+.globe-overlay {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.globe-hint {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.globe-panel {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.globe-panel .panel-head {
+  margin-top: 0;
+}
+
+.grid-narrow {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.grid-narrow::-webkit-scrollbar {
+  width: 8px;
+}
+
+.grid-narrow::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--line-strong);
+}
+
+@media (max-width: 1000px) {
+  .panel-globe {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .globe-panel {
+    position: static;
+  }
+
+  .grid-narrow {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 720px) {
+  .globe-canvas {
+    height: clamp(300px, 48vh, 440px);
+  }
+
+  .globe-overlay {
+    right: 12px;
+    bottom: 10px;
+    left: 12px;
+  }
+
+  .globe-hint {
+    font-size: 11.5px;
+  }
+}
