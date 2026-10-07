@@ -5,9 +5,9 @@
 # image itself; this one pulls the published image and publishes no host
 # ports, because Traefik reaches the app over the shared proxy network.
 #
-# Before the first deploy of this image, create the radio presets table:
-# see the CREATE TABLE in docs/radio-module.md. Without it only radio presets
-# fail; everything else, including the voice pipeline, works regardless.
+# Before the first deploy of this image, create the radio presets table
+# (docs/radio-module.md) and the token usage table (README, "Token usage").
+# Without them only those two features fail; everything else works regardless.
 
 services:
   app:
@@ -26,6 +26,9 @@ services:
       # that no longer appear on an entity. Never true against real data.
       DB_SYNC: 'false'
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      # Bearer secret for POST /tokens (Claude Code usage). Writes are refused
+      # while unset; GET /tokens/last7 is public either way.
+      TOKENS_AUTH_TOKEN: ${TOKENS_AUTH_TOKEN:-}
 
       # Voice assistant. Every setting has a working default; these are the
       # ones worth pinning in production.

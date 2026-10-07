@@ -13,6 +13,7 @@ playtime, and a voice assistant backend for a self-built ESP32 speaker.
 | `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
 | `scraping` | `GET /scraping`, `GET /scraping/games` | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.      |
 | `voice`    | `POST /voice/ota`, `GET /voice/ws`, `GET /voice/client` | ESP32 voice assistant: speech in, speech out. See [docs/voice-protocol.md](docs/voice-protocol.md). |
+| `tokens`   | `GET /tokens/last7`, `POST /tokens` | Claude Code token usage per day for the portfolio. See "Token usage" below. |
 
 ## Layout
 
@@ -108,6 +109,45 @@ hardware.
 
 The module holds no database state: conversation history lives on the session
 and dies with the socket.
+
+## Token usage
+
+`src/modules/tokens` stores one row per day of Claude Code usage and serves the
+last seven days to [arifhosan.me](https://arifhosan.me). The dev machine runs
+`npx ccusage --json` on a schedule and posts the `daily` rows as is:
+
+```
+POST /tokens
+Authorization: Bearer <TOKENS_AUTH_TOKEN>
+{ "days": [ { "date": "2026-10-07", "inputTokens": 0, "outputTokens": 0,
+              "cacheReadTokens": 0, "cacheCreationTokens": 0,
+              "totalTokens": 0, "totalCost": 0 } ] }
+```
+
+Rows are upserted by date; resend the last eight days every run and a missed
+run repairs itself. `TOKENS_AUTH_TOKEN` is a fixed shared secret; while it is
+unset the endpoint answers 503 rather than accepting writes.
+
+`GET /tokens/last7` is public and returns exactly seven calendar days
+(Europe/Berlin, oldest first) as `[{ date, total, cost }]`. A day without a row
+is `null`, so a gap shows as a gap rather than as zero. `cost` is ccusage's
+API list-price estimate, not the subscription bill.
+
+There is no migration setup, so create the table by hand (or boot once locally
+with `DB_SYNC=true`):
+
+```sql
+CREATE TABLE token_day (
+  date                VARCHAR(10)   NOT NULL PRIMARY KEY,
+  inputTokens         BIGINT        NOT NULL,
+  outputTokens        BIGINT        NOT NULL,
+  cacheReadTokens     BIGINT        NOT NULL,
+  cacheCreationTokens BIGINT        NOT NULL,
+  totalTokens         BIGINT        NOT NULL,
+  totalCost           DECIMAL(10,2) NOT NULL,
+  updatedAt           DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+);
+```
 
 ## Notes and known issues
 

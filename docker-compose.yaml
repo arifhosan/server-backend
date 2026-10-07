@@ -13,6 +13,7 @@ services:
       DB_NAME: ${DB_NAME:-api_db}
       DB_SYNC: ${DB_SYNC:-false}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      TOKENS_AUTH_TOKEN: ${TOKENS_AUTH_TOKEN:-}
     depends_on:
       database:
         condition: service_healthy
