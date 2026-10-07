@@ -9,6 +9,7 @@ import { ScrapingModule } from './modules/scraping/scraping.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RadioModule } from './modules/radio/radio.module';
 import { VoiceModule } from './modules/voice/voice.module';
+import { TokensModule } from './modules/tokens/tokens.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { VoiceModule } from './modules/voice/voice.module';
     AuthModule,
     RadioModule,
     VoiceModule,
+    TokensModule,
   ],
   controllers: [AppController, HaController],
   providers: [AppService],
