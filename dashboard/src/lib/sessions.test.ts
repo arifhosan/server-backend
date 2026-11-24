@@ -9,8 +9,8 @@ describe('sessionWhen', () => {
     expect(sessionWhen(mk('tracker', '2026-11-23T18:40:00Z', '2026-11-23T21:55:00Z'), TZ).label).toBe('19:40 – 22:55');
   });
   it('exophase and import show no times', () => {
-    expect(sessionWhen(exo, TZ).label).toBe('Daily total (Exophase)');
-    expect(sessionWhen({ ...exo, source: 'import' }, TZ).label).toBe('Daily total (Exophase)');
+    expect(sessionWhen(exo, TZ).label).toBe('Daily total (history)');
+    expect(sessionWhen({ ...exo, source: 'import' }, TZ).label).toBe('Daily total (history)');
   });
   it('steam/psn short window shows synced clock, long window shows dates', () => {
     expect(sessionWhen(mk('steam', '2026-11-20T13:18:00Z', '2026-11-20T14:37:00Z'), TZ).label).toBe('Synced 14:18 – 15:37');
@@ -24,8 +24,8 @@ describe('sessionWhen', () => {
 
 describe('sessionWhere', () => {
   it('labels sources and keeps the tracker device', () => {
-    expect(sessionWhere(exo)).toBe('Exophase import');
-    expect(sessionWhere(mk('import', exo.startedAt, exo.endedAt))).toBe('Exophase import');
+    expect(sessionWhere(exo)).toBe('Imported history');
+    expect(sessionWhere(mk('import', exo.startedAt, exo.endedAt))).toBe('Imported history');
     expect(sessionWhere(mk('steam', exo.startedAt, exo.endedAt))).toBe('Steam sync');
     expect(sessionWhere(mk('psn', exo.startedAt, exo.endedAt))).toBe('PlayStation sync');
     expect(sessionWhere(mk('tracker', exo.startedAt, exo.endedAt), 'DESKTOP-ARIF')).toBe('DESKTOP-ARIF');

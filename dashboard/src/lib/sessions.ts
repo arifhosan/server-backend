@@ -4,7 +4,7 @@ type S = { source: string; deviceId: number | null; startedAt: string; endedAt: 
 
 const DAILY = ['exophase', 'import'];
 const SYNC = ['steam', 'psn'];
-const WHERE: Record<string, string> = { exophase: 'Exophase import', import: 'Exophase import', steam: 'Steam sync', psn: 'PlayStation sync' };
+const WHERE: Record<string, string> = { exophase: 'Imported history', import: 'Imported history', steam: 'Steam sync', psn: 'PlayStation sync' };
 const DAY_MS = 86_400_000;
 
 const clock = (tz: string) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -15,7 +15,7 @@ export function sessionWhen(s: S, timeZone: string): { label: string } {
   const a = new Date(s.startedAt);
   const b = new Date(s.endedAt);
   const range = (f: Intl.DateTimeFormat) => `${f.format(a)} – ${f.format(b)}`;
-  if (DAILY.includes(s.source)) return { label: 'Daily total (Exophase)' };
+  if (DAILY.includes(s.source)) return { label: 'Daily total (history)' };
   if (SYNC.includes(s.source)) {
     if (b.getTime() - a.getTime() <= DAY_MS) return { label: `Synced ${range(clock(timeZone))}` };
     const m = mon(timeZone);
