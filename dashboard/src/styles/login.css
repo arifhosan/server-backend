@@ -1,0 +1,43 @@
+.login {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 16px;
+}
+.login-col { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 24px; }
+.login-hero { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.login-hero h1 { margin: 0; font-size: 28px; font-weight: 600; }
+.login-hero p { margin: 0; color: var(--muted); }
+.login-card {
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 16px;
+  padding: 24px; display: flex; flex-direction: column; gap: 18px;
+}
+.tabs {
+  display: flex; gap: 4px; padding: 4px; border-radius: 10px;
+  background: var(--bg); border: 1px solid var(--card-border);
+}
+.tab-btn {
+  font: inherit; font-size: 14px; font-weight: 600; flex: 1; border: 0; border-radius: 8px;
+  min-height: 44px; cursor: pointer; background: transparent; color: var(--muted);
+}
+.tab-btn[aria-selected='true'] { background: var(--selected); color: var(--text); }
+.form { display: flex; flex-direction: column; gap: 14px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.label { display: flex; flex-direction: column; gap: 6px; color: var(--text-label); font-size: 13px; font-weight: 500; }
+.field {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--field-border);
+  border-radius: 8px; padding: 0 12px; min-height: 44px; width: 100%;
+}
+.field[aria-invalid='true'] { border-color: var(--error); }
+.hint { color: var(--muted); font-weight: 400; }
+.hint.error { color: var(--error); }
+.alert {
+  border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error);
+  border-radius: 8px; padding: 10px 12px; font-size: 13px;
+}
+.primary {
+  font: inherit; font-size: 15px; font-weight: 600; border: 0; border-radius: 8px;
+  min-height: 46px; cursor: pointer; background: var(--primary); color: #fff;
+}
+.primary:hover:not(:disabled) { background: var(--primary-hover); }
+.primary:disabled { opacity: 0.6; cursor: default; }
+.note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.note.center { text-align: center; }
+@media (max-width: 400px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
