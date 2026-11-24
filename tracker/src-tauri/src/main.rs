@@ -143,6 +143,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
     app.state::<Shared>().state.lock_ok().connection = Connection::Ok { last_sent_at: None };
     publish(&app);
     let _ = app.state::<sender::Wake>().0.send(());
+    let _ = app.state::<sender::StatusWake>().0.send(());
     Ok(())
 }
 
@@ -150,6 +151,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
 fn remove_token(app: AppHandle) -> Res {
     token::clear().map_err(|e| e.to_string())?;
     app.state::<Shared>().state.lock_ok().connection = Connection::NoToken;
+    app.state::<Shared>().state.lock_ok().psn = None;
     publish(&app);
     Ok(())
 }
@@ -250,6 +252,7 @@ fn main() {
             });
 
             sender::spawn(app.handle().clone(), config_dir());
+            sender::spawn_status(app.handle().clone());
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", if paused { "Resume" } else { "Pause" }, true, None::<&str>)?;
