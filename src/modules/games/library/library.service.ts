@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, Like, Repository } from 'typeorm';
 import { LibraryGame } from '../entities/library-game.entity';
 import { Platform } from '../games.types';
+import type { ObservedTitle } from '../sync/platform-client';
 import { titleKey } from '../utils/title-key';
 
 @Injectable()
@@ -43,5 +44,40 @@ export class LibraryService {
       return repo.save(found);
     }
     return found;
+  }
+
+  /** By platform id; else adopts a legacy row with the same non-empty titleKey; else creates. */
+  async findOrAdopt(
+    userId: number,
+    o: ObservedTitle,
+    manager?: EntityManager,
+  ): Promise<LibraryGame> {
+    const repo = manager ? manager.getRepository(LibraryGame) : this.repo;
+    const { platform, externalId, title } = o;
+    const key = titleKey(title);
+    const exists = await repo.findOneBy({ userId, platform, externalId });
+    if (!exists && key !== '') {
+      const legacy = await repo.findOne({
+        where: {
+          userId,
+          platform,
+          titleKey: key,
+          externalId: Like('legacy:%'),
+        },
+        order: { id: 'ASC' },
+      });
+      if (legacy) {
+        legacy.externalId = externalId;
+        legacy.title = title;
+        return repo.save(legacy);
+      }
+    }
+    return this.upsertByExternalId(
+      userId,
+      platform,
+      externalId,
+      title,
+      manager,
+    );
   }
 }
