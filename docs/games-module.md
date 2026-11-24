@@ -98,3 +98,5 @@ read, never modified. `playtime` is read for the day check only.
    never overwritten, `play_session.legacyRef` is unique). Run it before the
    tracker/sync goes live: later changes to imported library rows would make
    the check fail, which fails safely (rollback).
+
+The dry-run report shows the would-be state (counts and `inserted` as if committed); the transaction is rolled back.
