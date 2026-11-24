@@ -1,4 +1,3 @@
-#![allow(dead_code)] // not wired into the app until Task 3
 //! Installed-game index. Pure parsers take strings or paths; only `Roots::detect` touches the system.
 mod epic;
 mod steam;
@@ -12,6 +11,22 @@ pub enum Store {
     Xbox,
     Epic,
     Other,
+}
+
+impl Store {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Store::Steam => "steam",
+            Store::Xbox => "xbox",
+            Store::Epic => "epic",
+            Store::Other => "other",
+        }
+    }
+}
+
+/// Same-directory key: backslashes, lowercase, no trailing separator.
+pub fn norm(p: &Path) -> String {
+    p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
