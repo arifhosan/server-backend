@@ -17,7 +17,8 @@ const STORES = { steam: 'Steam', xbox: 'Xbox', epic: 'Epic', other: 'Other' };
 
 function render() {
   if (!state) return;
-  const g = state.playing[0];
+  // most recently started = shortest session so far
+  const g = state.playing.reduce((a, b) => (!a || b.session_seconds < a.session_seconds ? b : a), null);
   const elapsed = Math.floor((Date.now() - stateAt) / 1000);
   const now = document.querySelector('.now');
   now.classList.toggle('playing', !!g);
@@ -25,7 +26,8 @@ function render() {
   $('now-label').hidden = !g;
   if (g) {
     setText($('now-title'), g.title);
-    setText($('now-sub'), `${STORES[g.store] || g.store} · ${hm(g.session_seconds + elapsed)} this session`);
+    const store = STORES[g.store] || g.store;
+    setText($('now-sub'), state.paused ? store : `${store} · ${hm(g.session_seconds + elapsed)} this session`);
   } else {
     setText($('now-title'), 'Not playing');
     setText($('now-sub'), '');
@@ -109,12 +111,14 @@ $('btn-save').onclick = async () => {
   } catch (e) { fail(e); }
 };
 $('token-paste').onclick = async () => {
+  let text;
   try {
-    await saveToken(await navigator.clipboard.readText());
-    showSettings(true);
+    text = await navigator.clipboard.readText();
   } catch {
     $('token-input').focus(); // clipboard denied: user presses Ctrl+V
+    return;
   }
+  try { await saveToken(text); showSettings(true); } catch (e) { fail(e); }
 };
 $('token-save').onclick = async () => {
   try { await saveToken($('token-input').value); $('token-input').value = ''; showSettings(true); } catch (e) { fail(e); }
