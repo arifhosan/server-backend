@@ -3,11 +3,26 @@ use crate::api::Api;
 use crate::library::Store;
 use crate::settings::Settings;
 use crate::state::RunningGame;
-use image::{imageops::FilterType, DynamicImage, ImageFormat, RgbaImage};
+use image::{imageops::FilterType, DynamicImage, ImageFormat, ImageReader, Limits, RgbaImage};
 use std::{io::Cursor, path::Path, sync::Mutex};
 
 const MAX_PX: u32 = 128;
 const MAX_BYTES: usize = 65_536;
+const MAX_FILE: u64 = 8 << 20;
+
+/// Decode an untrusted logo file within hard limits (8 MB file, 4096 px, 64 MiB alloc).
+fn decode_logo(path: &Path) -> Option<DynamicImage> {
+    if std::fs::metadata(path).ok()?.len() > MAX_FILE {
+        return None;
+    }
+    let mut r = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
+    let mut lim = Limits::default();
+    lim.max_image_width = Some(4096);
+    lim.max_image_height = Some(4096);
+    lim.max_alloc = Some(64 << 20);
+    r.limits(lim);
+    r.decode().ok()
+}
 
 /// PNG of at most 128 px and 64 KB, or None.
 fn encode(mut img: DynamicImage) -> Option<Vec<u8>> {
@@ -24,10 +39,11 @@ pub fn icon_png(store: Store, logo: Option<&Path>, exe: &Path) -> Option<Vec<u8>
     if store == Store::Steam {
         return None;
     }
-    if let Some(png) = logo.filter(|_| store == Store::Xbox).and_then(|l| image::open(l).ok()).and_then(encode) {
+    if let Some(png) = logo.filter(|_| store == Store::Xbox).and_then(decode_logo).and_then(encode) {
         return Some(png);
     }
-    let ico = windows_icons::get_icon_by_path(exe).ok()?;
+    // a panic inside the Win32 icon code just skips the icon
+    let ico = std::panic::catch_unwind(|| windows_icons::get_icon_by_path(exe)).ok()?.ok()?;
     encode(DynamicImage::ImageRgba8(RgbaImage::from_raw(ico.width(), ico.height(), ico.into_raw())?))
 }
 
@@ -68,6 +84,18 @@ mod tests {
         assert!(img.width() <= 128 && img.height() <= 128);
         assert!(png.len() <= 65_536);
         assert_eq!(&png[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn huge_declared_size_is_skipped() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("bomb.png");
+        // signature + IHDR declaring 11000 x 11000 RGBA; no pixel data follows
+        let mut b = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];
+        b.extend([0, 0, 0x2a, 0xf8, 0, 0, 0x2a, 0xf8, 8, 6, 0, 0, 0, 0, 0, 0, 0]);
+        std::fs::write(&p, b).unwrap();
+        assert!(decode_logo(&p).is_none());
+        assert!(icon_png(Store::Xbox, Some(&p), Path::new("nope.exe")).is_none());
     }
 
     #[test]
