@@ -27,6 +27,7 @@ function repo<T>(rows: () => T[]) {
             const val = v.value as unknown;
             if (v.type === 'in') return (val as unknown[]).includes(x);
             if (v.type === 'lessThan') return (x as Date) < (val as Date);
+            if (v.type === 'moreThan') return (x as Date) > (val as Date);
             if (v.type === 'moreThanOrEqual')
               return (x as Date) >= (val as Date);
             throw new Error(`unsupported operator ${v.type}`);
@@ -222,6 +223,22 @@ describe('StatsService', () => {
     await expect(service.icon(1, 1)).resolves.toBe(png);
     await expect(service.icon(1, 9)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.icon(1, 2)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('period ignores sessions without an in-range slice and drops 0 s rows', async () => {
+    // Ends exactly at the from-midnight (Berlin 2026-11-23 00:00 = 22:00Z the day before).
+    sess(1, 'tracker', '2026-11-22T21:00:00Z', '2026-11-22T22:00:00Z', 3600);
+    sess(3, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 600);
+    // A 0 s session on another game: counted, but no dayGames row.
+    sess(2, 'psn', '2026-11-23T10:00:00Z', '2026-11-23T11:00:00Z', 0);
+    const p = await service.period(1, { from: '2026-11-23', to: '2026-11-24' });
+    expect(p.games.map((g) => [g.titleKey, g.sessionCount])).toEqual([
+      ['trackeronly', 1],
+      ['cyberpunk2077', 1],
+    ]);
+    expect(p.dayGames).toEqual([
+      { date: '2026-11-24', titleKey: 'trackeronly', seconds: 600 },
+    ]);
   });
 
   it('rejects ranges over 366 days and bad dates', async () => {

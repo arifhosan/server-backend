@@ -13,6 +13,12 @@ pub struct Queue {
 impl Queue {
     pub fn open(path: impl Into<PathBuf>) -> Queue {
         let path = path.into();
+        // a torn last line (crash mid-append) must not swallow the next entry
+        if let Ok(b) = fs::read(&path) {
+            if b.last().is_some_and(|c| *c != b'\n') {
+                let _ = fs::OpenOptions::new().append(true).open(&path).and_then(|mut f| f.write_all(b"\n"));
+            }
+        }
         let items = fs::read_to_string(&path)
             .map(|t| t.lines().filter_map(|l| serde_json::from_str(l).ok()).collect())
             .unwrap_or_default();
@@ -51,6 +57,9 @@ impl Queue {
     pub fn ack(&mut self, n: usize) -> io::Result<()> {
         let now = self.last_now.get().unwrap_or_else(Utc::now);
         let rest: Vec<Heartbeat> = self.fresh(now).skip(n).cloned().collect();
+        if rest.len() == self.items.len() {
+            return Ok(()); // nothing acked or expired: leave the file alone
+        }
         let tmp = self.path.with_extension("jsonl.tmp");
         fs::write(&tmp, lines(&rest)?)?;
         fs::rename(&tmp, &self.path)?;
@@ -91,6 +100,21 @@ mod tests {
         let q = Queue::open(&p);
         assert_eq!(q.peek_batch(10, now)[0].game.title, "c");
         assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn torn_last_line_does_not_eat_next_push() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("queue.jsonl");
+        let now = Utc.with_ymd_and_hms(2026, 11, 24, 10, 0, 0).unwrap();
+        let mut q = Queue::open(&p);
+        q.push(&[hb(now, "a")]).unwrap();
+        fs::OpenOptions::new().append(true).open(&p).unwrap().write_all(br#"{"at":"2026-11-24T10:0"#).unwrap();
+        let mut q = Queue::open(&p);
+        q.push(&[hb(now, "b")]).unwrap();
+        let q = Queue::open(&p);
+        let t: Vec<_> = q.peek_batch(10, now).into_iter().map(|h| h.game.title).collect();
+        assert_eq!(t, ["a", "b"]);
     }
 
     #[test]

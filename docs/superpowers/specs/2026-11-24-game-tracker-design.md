@@ -414,8 +414,8 @@ PSN:
   container at `games.server.arifhosan.me` (Traefik routes `/api` to the
   backend, rest to nginx). Charts via one library (builder's choice).
 - Pages:
-  - Sign in / Register
-  - Overview: now playing, today, this week vs last, 30-day daily chart, top
+  - Sign in / Create account (one page, two tabs; inline error; "stay signed in 30 days")
+  - Overview: now playing, today, this week vs last, daily chart with a This week / This month toggle, top
     games, health banner for any failing/expiring source or quiet device
   - Library: all games grouped across platforms, search, platform filter
   - Game detail: totals per platform, daily chart, session list

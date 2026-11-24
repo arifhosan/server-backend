@@ -55,7 +55,9 @@ export interface LibraryEntry extends Art {
 }
 
 export interface GameDetail extends LibraryEntry {
+  /** Sparse: only days with play, oldest first (the client fills gaps); chart sources only, unknownSources always []. */
   daily: DayPoint[];
+  /** Last 100, newest first; import and legacy_test sessions are excluded, like the charts. */
   sessions: SessionRow[];
 }
 

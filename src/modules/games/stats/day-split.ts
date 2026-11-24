@@ -75,16 +75,14 @@ export function splitIntoDays(
     let given = 0;
     for (;;) {
       const next = addDays(day, 1);
-      const dayStart = localMidnight(day, timeZone).getTime();
       const dayEnd = localMidnight(next, timeZone).getTime();
       const last = end <= dayEnd;
-      // The last day takes the remainder so the parts always sum to `seconds`.
-      const part = last
-        ? s.seconds - given
-        : Math.round(
-            (s.seconds * (dayEnd - Math.max(start, dayStart))) / (end - start),
-          );
-      given += part;
+      // Cumulative rounding: every part is >= 0 and the parts sum to `seconds`.
+      const target = last
+        ? s.seconds
+        : Math.round((s.seconds * (dayEnd - start)) / (end - start));
+      const part = target - given;
+      given = target;
       add(day, part, estimated);
       if (last) break;
       day = next;
@@ -93,13 +91,14 @@ export function splitIntoDays(
   return out;
 }
 
-/** Local days in [from, to] (from the later of `from` and creation) with no ok run; only days inside the kept run history count. */
+/** Local days in [from, to] (from the later of `from` and creation, never today) with no ok run; only days inside the kept run history count. */
 export function unknownDays(
   runs: { startedAt: Date; ok: boolean }[],
   connectionCreatedAt: Date,
   from: string,
   to: string,
   timeZone: string,
+  now = new Date(),
 ): string[] {
   if (!runs.length) return [];
   const oldest = localDate(
@@ -110,9 +109,12 @@ export function unknownDays(
     runs.filter((r) => r.ok).map((r) => localDate(r.startedAt, timeZone)),
   );
   const out: string[] = [];
+  // Today may simply not have synced yet.
+  const today = localDate(now, timeZone);
   let day = [from, localDate(connectionCreatedAt, timeZone), oldest]
     .sort()
     .at(-1) as string;
-  for (; day <= to; day = addDays(day, 1)) if (!ok.has(day)) out.push(day);
+  for (; day <= to; day = addDays(day, 1))
+    if (day !== today && !ok.has(day)) out.push(day);
   return out;
 }
