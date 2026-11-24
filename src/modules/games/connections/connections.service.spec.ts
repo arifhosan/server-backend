@@ -140,4 +140,16 @@ describe('ConnectionsService', () => {
     sync.syncConnection.mockRejectedValue(new Error('x'));
     await expect(service.connectSteam(1, 'gabe')).resolves.toBeDefined();
   });
+
+  it('the initial sync is fire-and-forget: a never-finishing sync does not block', async () => {
+    sync.syncConnection.mockReturnValue(new Promise(() => undefined));
+    await expect(service.connectSteam(1, 'gabe')).resolves.toBeDefined();
+    await expect(service.connectPsn(1, NPSSO)).resolves.toBeDefined();
+  });
+
+  it("list returns only the caller's connections", async () => {
+    await service.connectSteam(1, 'gabe');
+    expect(await service.list(2)).toEqual([]);
+    expect(await service.list(1)).toHaveLength(1);
+  });
 });
