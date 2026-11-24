@@ -24,8 +24,9 @@ export interface Undated<T> {
 }
 
 /**
- * Drops noise and sets undated sessions apart: they go on no day, and count in a range only when
- * their whole window lies inside it (`undatedIn`). Tracker and import sessions are always dated.
+ * Drops noise and dates every session. `undated` stays empty since multi-day deltas now go on
+ * their end day. ponytail: the undated plumbing (undatedIn, undatedSeconds, UndatedNote) is now
+ * dead; delete it when this rule has settled.
  */
 export function partitionSessions<T extends Timed>(
   sessions: T[],
@@ -46,7 +47,18 @@ export function partitionSessions<T extends Timed>(
         ? localDate(new Date(s.endedAt.getTime() - 1), timeZone)
         : from;
     if (from === to) dated.push(s);
-    else undated.push({ s, from, to });
+    // Owner's rule: a multi-day PSN/Steam delta counts on the day it ended (last played is exact,
+    // the start is not), as one block right before its end; it spills back only if it can't fit.
+    else
+      dated.push({
+        ...s,
+        startedAt: new Date(
+          Math.max(
+            s.startedAt.getTime(),
+            s.endedAt.getTime() - s.seconds * 1000,
+          ),
+        ),
+      });
   }
   return { dated, undated };
 }

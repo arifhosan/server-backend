@@ -1,5 +1,5 @@
 import { SessionSource } from '../games.types';
-import { isNoise, partitionSessions, undatedIn } from './undated';
+import { isNoise, partitionSessions } from './undated';
 
 const s = (source: SessionSource, a: string, b: string, seconds = 3600) => ({
   source,
@@ -18,7 +18,7 @@ describe('undated sessions', () => {
     expect(isNoise({ source: 'import', seconds: 4 })).toBe(false);
   });
 
-  it('a PSN/Steam window over several local days is undated; tracker never is', () => {
+  it('a multi-day PSN/Steam window becomes one block before its end; tracker is untouched', () => {
     const gta = s('psn', '2026-11-21T23:00:00Z', '2026-11-24T18:34:00Z');
     const oneDay = s('steam', '2026-11-24T06:00:00Z', '2026-11-24T07:00:00Z');
     // Ends exactly at Berlin midnight: still the day before.
@@ -30,12 +30,38 @@ describe('undated sessions', () => {
     );
     const noise = s('psn', '2026-11-21T23:00:00Z', '2026-11-24T18:34:00Z', 4);
     const p = partitionSessions([gta, oneDay, toMidnight, tracker, noise], TZ);
-    expect(p.dated).toEqual([oneDay, toMidnight, tracker]);
-    expect(p.undated).toEqual([
-      { s: gta, from: '2026-11-22', to: '2026-11-24' },
+    expect(p.undated).toEqual([]);
+    expect(p.dated).toEqual([
+      {
+        ...gta,
+        startedAt: new Date(gta.endedAt.getTime() - gta.seconds * 1000),
+      },
+      oneDay,
+      toMidnight,
+      tracker,
     ]);
-    expect(undatedIn(p.undated, '2026-11-23', '2026-11-29')).toEqual([]);
-    expect(undatedIn(p.undated, '2026-11-22', '2026-11-24')).toHaveLength(1);
-    expect(undatedIn(p.undated, '2026-11-01', '2026-11-30')).toHaveLength(1);
+  });
+
+  it('a block that does not fit its end day spills back, never before the window start', () => {
+    // 5 h ending 02:00 Berlin on 11-24: starts 21:00 Berlin on 11-23.
+    const late = s(
+      'psn',
+      '2026-11-21T23:00:00Z',
+      '2026-11-24T01:00:00Z',
+      5 * 3600,
+    );
+    expect(partitionSessions([late], TZ).dated[0].startedAt).toEqual(
+      new Date('2026-11-23T20:00:00Z'),
+    );
+    // More seconds than the window: the start stays at the window start.
+    const over = s(
+      'steam',
+      '2026-11-23T20:00:00Z',
+      '2026-11-24T01:00:00Z',
+      9 * 3600,
+    );
+    expect(partitionSessions([over], TZ).dated[0].startedAt).toEqual(
+      over.startedAt,
+    );
   });
 });

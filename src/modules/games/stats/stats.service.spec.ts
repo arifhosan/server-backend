@@ -268,37 +268,37 @@ describe('StatsService', () => {
       d: string,
     ) => p.days.find((x) => x.date === d)?.seconds ?? 0;
 
-    it('week 11-23..29: GTA is not inside, so it is in no total and no bar', async () => {
+    // Owner's rule: a multi-day delta counts on the day it ended, as one block before its end.
+    // GTA's 11.8 h block ends 11-24 19:34 Berlin, so it lies wholly on 11-24.
+    it('week 11-23..29: GTA counts on its end day, 11-24', async () => {
       const p = await service.period(1, {
         from: '2026-11-23',
         to: '2026-11-29',
       });
-      expect(p.games.map((g) => g.titleKey)).not.toContain('grandtheftautov');
+      expect(
+        p.games.find((g) => g.titleKey === 'grandtheftautov'),
+      ).toMatchObject({ seconds: h(11.8), sessionCount: 1 });
       expect(p.undatedSeconds).toBe(0);
-      expect(dayOf(p, '2026-11-24')).toBe(3600);
+      expect(dayOf(p, '2026-11-24')).toBe(3600 + h(11.8));
       expect(dayOf(p, '2026-11-23')).toBe(1800); // the tracker half after midnight
-      expect(p.dayGames.some((x) => x.titleKey === 'grandtheftautov')).toBe(
-        false,
-      );
+      expect(p.dayGames).toContainEqual({
+        date: '2026-11-24',
+        titleKey: 'grandtheftautov',
+        seconds: h(11.8),
+      });
     });
 
-    it('November: GTA is in the games and undatedSeconds, never in a day bar', async () => {
+    it('November: bars add up to the games; noise counts nowhere', async () => {
       const p = await service.period(1, {
         from: '2026-11-01',
         to: '2026-11-30',
       });
-      const gta = p.games.find((g) => g.titleKey === 'grandtheftautov');
-      expect(gta).toMatchObject({ seconds: h(11.8), sessionCount: 1 });
-      expect(p.undatedSeconds).toBe(h(11.8));
-      expect(p.dayGames.some((x) => x.titleKey === 'grandtheftautov')).toBe(
-        false,
-      );
       const bars = p.days.reduce((a, d) => a + d.seconds, 0);
       const games = p.games.reduce((a, g) => a + g.seconds, 0);
-      expect(bars + p.undatedSeconds).toBe(games);
+      expect(bars).toBe(games);
       expect(dayOf(p, '2026-11-22')).toBe(1800);
       expect(dayOf(p, '2026-11-23')).toBe(1800);
-      expect(dayOf(p, '2026-11-24')).toBe(3600); // the 1 h PSN session, no noise, no GTA
+      expect(dayOf(p, '2026-11-24')).toBe(3600 + h(11.8));
       // The 4 s session counts nowhere: Cyberpunk has only the 1 h one.
       expect(p.games.find((g) => g.titleKey === 'cyberpunk2077')).toMatchObject(
         {
@@ -308,23 +308,25 @@ describe('StatsService', () => {
       );
     });
 
-    it('overview: GTA counts in the 30 days and top games, not in today or this week', async () => {
+    it('overview: GTA counts today and this week', async () => {
       const o = await service.overview(1, new Date('2026-11-24T19:00:00Z'));
-      expect(o.today).toBe(3600);
-      expect(o.thisWeek).toBe(1800 + 3600); // Monday 11-23
-      expect(o.undatedSeconds).toBe(h(11.8));
+      expect(o.today).toBe(3600 + h(11.8));
+      expect(o.thisWeek).toBe(1800 + 3600 + h(11.8)); // Monday 11-23
+      expect(o.undatedSeconds).toBe(0);
       expect(
         o.topGames30d.find((g) => g.titleKey === 'grandtheftautov')?.seconds,
       ).toBe(h(11.8));
       expect(o.last30Days.reduce((a, d) => a + d.seconds, 0)).toBe(
-        1800 + 1800 + 3600,
+        1800 + 1800 + 3600 + h(11.8),
       );
     });
 
-    it('game page: no daily point for GTA, undatedSeconds instead; noise hidden from the list', async () => {
+    it('game page: GTA has one daily point on 11-24; noise hidden from the list', async () => {
       const gta = await service.game(1, 6);
-      expect(gta.daily).toEqual([]);
-      expect(gta.undatedSeconds).toBe(h(11.8));
+      expect(gta.daily.map((d) => [d.date, d.seconds])).toEqual([
+        ['2026-11-24', h(11.8)],
+      ]);
+      expect(gta.undatedSeconds).toBe(0);
       expect(gta.sessions).toHaveLength(1);
       const cp = await service.game(1, 2);
       expect(cp.sessions.map((x) => x.seconds)).toEqual([3600]);
