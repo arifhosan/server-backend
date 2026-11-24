@@ -52,6 +52,19 @@ export class HeartbeatDto {
   game: HeartbeatGameDto;
 }
 
+export class IconUploadDto {
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => HeartbeatGameDto)
+  game: HeartbeatGameDto;
+
+  /** Base64 of a PNG up to 64 KB; the length cap keeps junk from being decoded. */
+  @IsString()
+  @MaxLength(90_000)
+  png: string;
+}
+
 export class HeartbeatsDto {
   @IsArray()
   @ArrayMinSize(1)

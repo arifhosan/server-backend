@@ -4,8 +4,11 @@ import {
   Param,
   ParseIntPipe,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthenticatedUser } from '../../../common/auth/auth.types';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../../common/auth/jwt-auth.guard';
@@ -57,6 +60,17 @@ export class StatsController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<GameDetail> {
     return this.stats.game(user.userId, id);
+  }
+
+  @Get('library/:id/icon')
+  async icon(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const png = await this.stats.icon(user.userId, id);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    return new StreamableFile(png, { type: 'image/png' });
   }
 
   @Get('calendar')

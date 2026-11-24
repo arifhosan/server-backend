@@ -1,20 +1,27 @@
 import { createHash } from 'crypto';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
+  EntityManager,
   In,
   LessThanOrEqual,
   MoreThanOrEqual,
   Repository,
 } from 'typeorm';
 import { DeviceContext } from '../devices/device-auth.guard';
-import { HeartbeatDto, TrackerStore } from '../dto/heartbeats.dto';
+import {
+  HeartbeatDto,
+  HeartbeatGameDto,
+  TrackerStore,
+} from '../dto/heartbeats.dto';
 import { Connection } from '../entities/connection.entity';
 import { Device } from '../entities/device.entity';
+import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { ConnectionStatus, Platform } from '../games.types';
+import { isPng, MAX_ICON_BYTES, pickArt, steamImageUrl } from '../library/art';
 import { LibraryService } from '../library/library.service';
 import { titleKey } from '../utils/title-key';
 import { mergeHeartbeat } from './heartbeat-merge';
@@ -30,6 +37,8 @@ export interface NowPlaying {
   title: string;
   platform: Platform;
   startedAt: Date;
+  imageUrl: string | null;
+  hasIcon: boolean;
 }
 
 export interface TrackerStatus {
@@ -67,7 +76,46 @@ export class TrackerService {
     @InjectRepository(Device) private readonly devices: Repository<Device>,
     @InjectRepository(Connection)
     private readonly connections: Repository<Connection>,
+    @InjectRepository(GameIcon)
+    private readonly icons: Repository<GameIcon>,
   ) {}
+
+  /** Heartbeats and icon uploads resolve the library game the same way; Steam games get their CDN art. */
+  private async resolveGame(
+    userId: number,
+    { store, storeId, title }: HeartbeatGameDto,
+    manager?: EntityManager,
+  ): Promise<LibraryGame> {
+    const game = await this.library.upsertByExternalId(
+      userId,
+      trackerPlatform(store),
+      storeId ?? folderId(title),
+      title,
+      manager,
+    );
+    const url = store === 'steam' && storeId ? steamImageUrl(storeId) : null;
+    if (url && game.imageUrl !== url) {
+      game.imageUrl = url;
+      await (manager ? manager.getRepository(LibraryGame) : this.games).update(
+        game.id,
+        { imageUrl: url },
+      );
+    }
+    return game;
+  }
+
+  async saveIcon(
+    userId: number,
+    game: HeartbeatGameDto,
+    base64: string,
+  ): Promise<void> {
+    const png = Buffer.from(base64, 'base64');
+    if (png.length > MAX_ICON_BYTES)
+      throw new BadRequestException('Icon is larger than 64 KB');
+    if (!isPng(png)) throw new BadRequestException('Icon must be a PNG');
+    const { id } = await this.resolveGame(userId, game);
+    await this.icons.save({ libraryGameId: id, png });
+  }
 
   async ingest(
     device: DeviceContext,
@@ -87,14 +135,7 @@ export class TrackerService {
       const sessions = manager.getRepository(PlaySession);
       const games = manager.getRepository(LibraryGame);
       for (const { h, at } of valid) {
-        const { store, storeId, title } = h.game;
-        const game = await this.library.upsertByExternalId(
-          device.userId,
-          trackerPlatform(store),
-          storeId ?? folderId(title),
-          title,
-          manager,
-        );
+        const game = await this.resolveGame(device.userId, h.game, manager);
         const latest = await sessions.findOne({
           where: {
             deviceId: device.deviceId,
@@ -157,6 +198,14 @@ export class TrackerService {
         where: { id: In(active.map((s) => s.deviceId as number)) },
       }),
     ]);
+    const iconIds = new Set(
+      (
+        await this.icons.find({
+          select: { libraryGameId: true },
+          where: { libraryGameId: In(games.map((g) => g.id)) },
+        })
+      ).map((i) => i.libraryGameId),
+    );
     return active.flatMap((s) => {
       const g = games.find((x) => x.id === s.libraryGameId);
       const d = devices.find((x) => x.id === s.deviceId);
@@ -169,6 +218,7 @@ export class TrackerService {
           title: g.title,
           platform: g.platform,
           startedAt: s.startedAt,
+          ...pickArt([g], iconIds),
         },
       ];
     });

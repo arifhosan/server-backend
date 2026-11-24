@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource, FindOperator } from 'typeorm';
+import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { SessionSource } from '../games.types';
@@ -11,6 +12,12 @@ type Row = Record<string, unknown>;
 /** Minimal in-memory repo: equality plus the In / LessThan / MoreThanOrEqual operators the service uses. */
 function repo<T>(rows: () => T[]) {
   return {
+    findOneBy: (w: Row) =>
+      Promise.resolve(
+        rows().find((r) =>
+          Object.entries(w).every(([k, v]) => (r as Row)[k] === v),
+        ) ?? null,
+      ),
     find: ({ where }: { where: Row }) =>
       Promise.resolve(
         rows().filter((r) =>
@@ -34,6 +41,7 @@ describe('StatsService', () => {
   const now = new Date('2026-11-24T12:00:00Z');
   let games: Partial<LibraryGame>[];
   let sessions: Partial<PlaySession>[];
+  let icons: Partial<GameIcon>[];
   let service: StatsService;
   let nid: number;
 
@@ -68,6 +76,7 @@ describe('StatsService', () => {
   beforeEach(() => {
     games = [];
     sessions = [];
+    icons = [];
     nid = 1;
     const empty = repo(() => []);
     service = new StatsService(
@@ -80,11 +89,18 @@ describe('StatsService', () => {
         query: () => Promise.resolve([{ timezone: 'Europe/Berlin' }]),
       } as unknown as DataSource,
       { nowPlaying: () => Promise.resolve([]) } as unknown as TrackerService,
+      repo(() => icons as GameIcon[]) as never,
     );
-    game({ id: 1, platform: 'steam', title: 'Cyberpunk 2077' });
+    game({
+      id: 1,
+      platform: 'steam',
+      title: 'Cyberpunk 2077',
+      imageUrl: 'steam.jpg',
+    });
     game({
       id: 2,
       platform: 'ps5',
+      imageUrl: 'ps5.jpg',
       title: 'Cyberpunk 2077',
       totalSeconds: 5000,
     });
@@ -173,6 +189,40 @@ describe('StatsService', () => {
       { date: '2026-11-23', titleKey: 'cyberpunk2077', seconds: 1800 },
       { date: '2026-11-24', titleKey: 'cyberpunk2077', seconds: 1800 },
     ]);
+  });
+
+  it('exposes art: steam image preferred, hasIcon if any member has one', async () => {
+    sess(1, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 3600);
+    icons.push({ libraryGameId: 2 });
+    const lib = await service.library(1, {});
+    expect(lib.find((e) => e.title === 'Cyberpunk 2077')).toMatchObject({
+      imageUrl: 'steam.jpg',
+      hasIcon: true,
+    });
+    expect(lib.find((e) => e.title === 'Tracker Only')).toMatchObject({
+      imageUrl: null,
+      hasIcon: false,
+    });
+    const o = await service.overview(1, now);
+    expect(o.topGames30d[0]).toMatchObject({
+      imageUrl: 'steam.jpg',
+      hasIcon: true,
+    });
+    const s = await service.sessions(1, {
+      from: '2026-11-24',
+      to: '2026-11-24',
+    });
+    expect(s[0]).toMatchObject({ imageUrl: 'steam.jpg' });
+    const p = await service.period(1, { from: '2026-11-24', to: '2026-11-24' });
+    expect(p.games[0]).toMatchObject({ imageUrl: 'steam.jpg' });
+  });
+
+  it("serves the icon of the user's own game only", async () => {
+    const png = Buffer.from('x');
+    icons.push({ libraryGameId: 1, png }, { libraryGameId: 9, png });
+    await expect(service.icon(1, 1)).resolves.toBe(png);
+    await expect(service.icon(1, 9)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.icon(1, 2)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('period ignores sessions without an in-range slice and drops 0 s rows', async () => {

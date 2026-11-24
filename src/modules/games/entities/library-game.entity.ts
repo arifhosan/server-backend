@@ -32,4 +32,7 @@ export class LibraryGame {
 
   @Column({ type: 'datetime', precision: 6, nullable: true })
   lastPlayedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  imageUrl: string | null;
 }
