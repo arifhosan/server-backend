@@ -62,6 +62,27 @@ describe('decideDelta', () => {
     ).toMatchObject({ source: 'platform', seconds: 600 });
   });
 
+  it('treats delta equal to the window as a platform session', () => {
+    const r = decideDelta({
+      ...base,
+      priorSeconds: 0,
+      reportedSeconds: 7200,
+    });
+    expect(r.session).toMatchObject({ source: 'platform', seconds: 7200 });
+  });
+
+  it('drops a remainder equal to minRemainder', () => {
+    expect(
+      decideDelta({
+        ...base,
+        priorSeconds: 0,
+        reportedSeconds: 3600,
+        alreadyTracked: 3300,
+        minRemainder: 300,
+      }),
+    ).toEqual({ updateTotal: true, session: null });
+  });
+
   it('catches up from priorChangedAt when there is no window', () => {
     const start = new Date('2026-11-21T23:00:00Z');
     const r = decideDelta({
