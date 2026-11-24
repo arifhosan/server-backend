@@ -5,6 +5,7 @@ import { Spinner } from './components/Spinner';
 import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PeriodPage } from './pages/PeriodPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 /** Signed-out visitors go to /login?next=<where they were headed>. */
 function RequireAuth() {
@@ -27,7 +28,7 @@ export function App() {
         <Route path="library" element={<Page title="Library" />} />
         <Route path="games/:id" element={<Page title="Game" />} />
         <Route path="period" element={<PeriodPage />} />
-        <Route path="settings" element={<Page title="Devices & connections" />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Page title="Not found" />} />
       </Route>
     </Routes>
