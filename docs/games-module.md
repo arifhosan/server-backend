@@ -74,3 +74,27 @@ CREATE TABLE play_session (
 ```
 
 `legacyRef` (`game:<id>` / `game_old:<id>`) makes the legacy import idempotent.
+
+## Legacy import runbook
+
+One-off import of the Exophase-era data (`game`, `game_old`, `total_game_time`)
+into `library_game` / `play_session` for one user. The legacy tables are only
+read, never modified. `playtime` is read for the day check only.
+
+1. Back up first and keep the file:
+   `mysqldump api_db game game_old total_game_time playtime > legacy-YYYY-MM-DD.sql`
+2. Dry run (default, writes nothing, rolls back):
+   `node dist/modules/games/legacy/run-legacy-import.js --user-id <id>`
+3. Read the JSON report. Expect `game` 840, `game_old` 49, `total_game_time` 282,
+   `playtime` 366, no error. Look at `unknownPlatforms` (mapped to `pc_other`)
+   and `dayMismatches` (days where `playtime` differs from the sum of `game`
+   rows by UTC createdAt date; about 8 are expected). Sources: `exophase`
+   counts, `import` (baseline and over-long sessions) is left out of charts,
+   `legacy_test` (`game_old`) is left out of totals.
+4. Commit: `node dist/modules/games/legacy/run-legacy-import.js --user-id <id> --commit`.
+   Row counts and per-game and per-source seconds are compared with the legacy
+   tables inside the transaction; any mismatch aborts and rolls back.
+5. Re-running prints the same counts with `inserted` all 0 (existing rows are
+   never overwritten, `play_session.legacyRef` is unique). Run it before the
+   tracker/sync goes live: later changes to imported library rows would make
+   the check fail, which fails safely (rollback).
