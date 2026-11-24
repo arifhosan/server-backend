@@ -34,8 +34,9 @@ ENV NODE_ENV=production \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium
 
-# chromium pulls in most of its own libraries; the fonts are needed for the
-# scraped pages to render text at all.
+# chromium pulls in most of its own libraries; the fonts are needed for pages
+# to render text at all. Chromium is kept available for future browser
+# automation (no module uses it today).
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         chromium \
