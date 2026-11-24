@@ -5,8 +5,13 @@ use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct RunningGame {
+    /// "<store>:<store_id or folder title>"
+    pub key: String,
     pub title: String,
     pub store: String,
+    pub store_id: Option<String>,
+    pub exe: String,
+    pub started_at: chrono::DateTime<chrono::Utc>,
     pub session_seconds: u64,
 }
 
