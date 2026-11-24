@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConnectionsController } from './connections/connections.controller';
+import { ConnectionsService } from './connections/connections.service';
 import { DeviceAuthGuard } from './devices/device-auth.guard';
 import { DevicesController } from './devices/devices.controller';
 import { DevicesService } from './devices/devices.service';
@@ -31,9 +33,10 @@ import { loadSecretKey } from './utils/secret-box';
       PlaySession,
     ]),
   ],
-  controllers: [DevicesController, TrackerController],
+  controllers: [DevicesController, TrackerController, ConnectionsController],
   providers: [
     DevicesService,
+    ConnectionsService,
     DeviceAuthGuard,
     LegacyImportService,
     LibraryService,
