@@ -3,35 +3,40 @@ const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 
 let state = null;
+let stateAt = 0;
+const setState = (s) => { state = s; stateAt = Date.now(); render(); };
 
-const hm = (s) => `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
-const hmShort = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+// "3h 05m"; under an hour "45m"
+const hm = (s) => {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+};
+// write only on change so the aria-live region is not re-announced by the 1 s tick
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
 const STORES = { steam: 'Steam', xbox: 'Xbox', epic: 'Epic', other: 'Other' };
 
 function render() {
   if (!state) return;
   const g = state.playing[0];
+  const elapsed = Math.floor((Date.now() - stateAt) / 1000);
   const now = document.querySelector('.now');
   now.classList.toggle('playing', !!g);
   now.classList.toggle('idle', !g);
   $('now-label').hidden = !g;
   if (g) {
-    $('now-title').textContent = g.title;
-    $('now-sub').textContent = `${STORES[g.store] || g.store} · ${hmShort(g.session_seconds)} this session`;
+    setText($('now-title'), g.title);
+    setText($('now-sub'), `${STORES[g.store] || g.store} · ${hm(g.session_seconds + elapsed)} this session`);
   } else {
-    $('now-title').textContent = 'Not playing';
-    $('now-sub').textContent = '';
+    setText($('now-title'), 'Not playing');
+    setText($('now-sub'), '');
   }
-  $('today').textContent = hm(state.today_seconds);
+  setText($('today'), hm(state.today_seconds + (g && !state.paused ? elapsed : 0)));
 
   const c = state.connection;
   $('conn-revoked').hidden = c.kind !== 'revoked';
   const conn = $('conn');
   conn.hidden = c.kind === 'revoked';
-  conn.replaceChildren();
-  const dot = document.createElement('span');
-  dot.className = 'dot ' + (c.kind === 'ok' ? 'ok' : 'off');
-  dot.setAttribute('aria-hidden', 'true');
+  $('conn-dot').className = 'dot ' + (c.kind === 'ok' ? 'ok' : 'off');
   let text = '';
   if (c.kind === 'ok') {
     text = c.last_sent_at == null
@@ -42,16 +47,16 @@ function render() {
   } else if (c.kind === 'no_token') {
     text = 'No device token set. Open Settings to paste one.';
   }
-  conn.append(dot, text);
+  setText($('conn-text'), text);
 
   const p = state.psn;
   $('psn').hidden = !p;
   if (p) {
-    $('psn-text').textContent = p.status === 'expired'
+    setText($('psn-text'), p.status === 'expired'
       ? 'PSN sign-in expired'
-      : `PSN sign-in expires in ${p.days} days`;
+      : `PSN sign-in expires in ${p.days} days`);
   }
-  $('btn-pause').textContent = state.paused ? 'Resume' : 'Pause';
+  setText($('btn-pause'), state.paused ? 'Resume' : 'Pause');
 }
 
 async function showSettings(on) {
@@ -107,7 +112,12 @@ $('token-paste').onclick = async () => {
   try {
     await saveToken(await navigator.clipboard.readText());
     showSettings(true);
-  } catch (e) { fail(e); }
+  } catch {
+    $('token-input').focus(); // clipboard denied: user presses Ctrl+V
+  }
+};
+$('token-save').onclick = async () => {
+  try { await saveToken($('token-input').value); $('token-input').value = ''; showSettings(true); } catch (e) { fail(e); }
 };
 $('token-remove').onclick = async () => {
   try { await invoke('remove_token'); showSettings(true); } catch (e) { fail(e); }
@@ -117,6 +127,6 @@ $('revoked-save').onclick = async () => {
   try { await saveToken(el.value); el.value = ''; } catch (e) { el.setCustomValidity(String(e)); el.reportValidity(); }
 };
 
-listen('state', (e) => { state = e.payload; render(); });
-invoke('get_state').then((s) => { state = s; render(); });
+listen('state', (e) => setState(e.payload));
+invoke('get_state').then(setState);
 setInterval(render, 1000);

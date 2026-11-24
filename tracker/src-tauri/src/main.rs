@@ -19,6 +19,16 @@ use tauri_plugin_opener::OpenerExt as _;
 
 type Res<T = ()> = Result<T, String>;
 
+trait LockOk<T> {
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T>;
+}
+impl<T> LockOk<T> for Mutex<T> {
+    /// Lock without panicking on a poisoned mutex.
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 struct Shared {
     state: Mutex<AppState>,
     settings: Mutex<Settings>,
@@ -39,7 +49,7 @@ struct SettingsView {
 
 /// Emit `state` to the UI and sync the tray icon and menu. Call after every state change.
 fn publish(app: &AppHandle) {
-    let st = app.state::<Shared>().state.lock().unwrap().clone();
+    let st = app.state::<Shared>().state.lock_ok().clone();
     let _ = app.emit("state", &st);
     if let Some(t) = app.try_state::<Tray>() {
         let bytes: &[u8] = if st.playing.is_empty() {
@@ -56,19 +66,21 @@ fn publish(app: &AppHandle) {
 
 fn apply_paused(app: &AppHandle, paused: bool) -> Res {
     let shared = app.state::<Shared>();
-    shared.state.lock().unwrap().paused = paused;
     {
-        let mut s = shared.settings.lock().unwrap();
-        s.paused = paused;
-        s.save(&config_dir()).map_err(|e| e.to_string())?;
+        let mut s = shared.settings.lock_ok();
+        let mut next = s.clone();
+        next.paused = paused;
+        next.save(&config_dir()).map_err(|e| e.to_string())?;
+        *s = next;
     }
+    shared.state.lock_ok().paused = paused;
     publish(app);
     Ok(())
 }
 
-fn apply_autostart(app: &AppHandle, on: bool) {
+fn apply_autostart(app: &AppHandle, on: bool) -> Res {
     let al = app.autolaunch();
-    let _ = if on { al.enable() } else { al.disable() };
+    (if on { al.enable() } else { al.disable() }).map_err(|e| e.to_string())
 }
 
 fn show_window(w: &WebviewWindow) {
@@ -79,12 +91,12 @@ fn show_window(w: &WebviewWindow) {
 
 #[tauri::command]
 fn get_state(shared: State<Shared>) -> AppState {
-    shared.state.lock().unwrap().clone()
+    shared.state.lock_ok().clone()
 }
 
 #[tauri::command]
 fn get_settings(shared: State<Shared>) -> SettingsView {
-    let s = shared.settings.lock().unwrap();
+    let s = shared.settings.lock_ok();
     SettingsView {
         server_url: s.server_url.clone(),
         start_with_windows: s.start_with_windows,
@@ -101,13 +113,12 @@ fn save_settings(app: AppHandle, server_url: String, start_with_windows: bool) -
     }
     {
         let shared = app.state::<Shared>();
-        let mut s = shared.settings.lock().unwrap();
+        let mut s = shared.settings.lock_ok();
         s.server_url = url.to_string();
         s.start_with_windows = start_with_windows;
         s.save(&config_dir()).map_err(|e| e.to_string())?;
     }
-    apply_autostart(&app, start_with_windows);
-    Ok(())
+    apply_autostart(&app, start_with_windows)
 }
 
 #[tauri::command]
@@ -117,7 +128,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
         return Err("Token is empty".into());
     }
     token::set(t).map_err(|e| e.to_string())?;
-    app.state::<Shared>().state.lock().unwrap().connection = Connection::Ok { last_sent_at: None };
+    app.state::<Shared>().state.lock_ok().connection = Connection::Ok { last_sent_at: None };
     publish(&app);
     Ok(())
 }
@@ -125,7 +136,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
 #[tauri::command]
 fn remove_token(app: AppHandle) -> Res {
     token::clear().map_err(|e| e.to_string())?;
-    app.state::<Shared>().state.lock().unwrap().connection = Connection::NoToken;
+    app.state::<Shared>().state.lock_ok().connection = Connection::NoToken;
     publish(&app);
     Ok(())
 }
@@ -137,7 +148,7 @@ fn set_paused(app: AppHandle, paused: bool) -> Res {
 
 #[tauri::command]
 fn unignore(shared: State<Shared>, title: String) -> Res {
-    let mut s = shared.settings.lock().unwrap();
+    let mut s = shared.settings.lock_ok();
     s.ignored.retain(|t| *t != title);
     s.save(&config_dir()).map_err(|e| e.to_string())
 }
@@ -147,7 +158,7 @@ fn open_dashboard(app: AppHandle, path: String) -> Res {
     if !path.starts_with('/') {
         return Err("path must start with /".into());
     }
-    let base = dashboard_url(&app.state::<Shared>().settings.lock().unwrap().server_url);
+    let base = dashboard_url(&app.state::<Shared>().settings.lock_ok().server_url);
     app.opener().open_url(format!("{base}{path}"), None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -174,7 +185,7 @@ fn main() {
         })
         .setup(|app| {
             let settings = Settings::load(&config_dir());
-            apply_autostart(app.handle(), settings.start_with_windows);
+            let _ = apply_autostart(app.handle(), settings.start_with_windows); // startup: UI shows errors on save
             let paused = settings.paused;
             app.manage(Shared {
                 state: Mutex::new(AppState::new(token::get().is_some(), paused)),
@@ -196,7 +207,7 @@ fn main() {
                         }
                     }
                     "pause" => {
-                        let p = app.state::<Shared>().state.lock().unwrap().paused;
+                        let p = app.state::<Shared>().state.lock_ok().paused;
                         let _ = apply_paused(app, !p);
                     }
                     "quit" => app.exit(0),

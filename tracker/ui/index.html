@@ -17,7 +17,7 @@
   <div class="row today"><span>Today on this PC</span><strong id="today"></strong></div>
 
   <section class="status">
-    <div id="conn" class="line"></div>
+    <div id="conn" class="line"><span id="conn-dot" class="dot" aria-hidden="true"></span><span id="conn-text"></span></div>
     <div id="conn-revoked" class="banner" hidden>
       <div>This device was removed in the dashboard</div>
       <div class="inline">
@@ -48,6 +48,10 @@
       <code id="token-masked" class="grow">Not set</code>
       <button id="token-paste" type="button" class="small">Paste</button>
       <button id="token-remove" type="button" class="small">Remove</button>
+    </div>
+    <div class="inline">
+      <input id="token-input" type="password" placeholder="Paste token here" aria-label="New device token" autocomplete="off" spellcheck="false">
+      <button id="token-save" type="button" class="small">Save</button>
     </div>
   </div>
   <label class="check"><input id="autostart" type="checkbox"> Start with Windows</label>

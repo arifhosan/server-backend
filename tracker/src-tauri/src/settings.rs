@@ -29,15 +29,21 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load(dir: &Path) -> Settings {
-        std::fs::read_to_string(dir.join("settings.json"))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let path = dir.join("settings.json");
+        let Ok(text) = std::fs::read_to_string(&path) else { return Settings::default() };
+        serde_json::from_str(&text).unwrap_or_else(|_| {
+            // keep the corrupt file for inspection instead of silently overwriting it
+            let _ = std::fs::rename(&path, dir.join("settings.json.bad"));
+            Settings::default()
+        })
     }
 
+    /// Atomic: write a temp file in the same dir, then rename over the target.
     pub fn save(&self, dir: &Path) -> io::Result<()> {
         std::fs::create_dir_all(dir)?;
-        std::fs::write(dir.join("settings.json"), serde_json::to_string_pretty(self)?)
+        let tmp = dir.join("settings.json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
+        std::fs::rename(&tmp, dir.join("settings.json"))
     }
 }
 
@@ -75,6 +81,7 @@ mod tests {
         let s = Settings { server_url: "http://x/api".into(), start_with_windows: false, paused: true, ignored: vec!["A".into()], sent_icons: vec!["steam:1".into()] };
         s.save(&d).unwrap();
         assert_eq!(Settings::load(&d), s);
+        assert!(!d.join("settings.json.tmp").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -84,6 +91,8 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("settings.json"), "{nope").unwrap();
         assert_eq!(Settings::load(&d), Settings::default());
+        assert!(d.join("settings.json.bad").exists());
+        assert!(!d.join("settings.json").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 
