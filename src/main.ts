@@ -1,15 +1,11 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { bodyParsers } from './common/body-parsers';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bodyParser: false,
-  });
-  app.use(...bodyParsers());
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Traefik is one proxy hop in front; raise the count if another proxy is added.
   app.set('trust proxy', 1);
