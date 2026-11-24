@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="main-view">
+  <section class="now" aria-live="polite">
+    <div id="now-label" class="label"><span class="dot" aria-hidden="true"></span><span id="now-label-text">NOW PLAYING</span></div>
+    <div id="now-title" class="title"></div>
+    <div id="now-sub" class="muted"></div>
+  </section>
+
+  <div class="row today"><span>Today on this PC</span><strong id="today"></strong></div>
+
+  <section class="status">
+    <div id="conn" class="line"></div>
+    <div id="conn-revoked" class="banner" hidden>
+      <div>This device was removed in the dashboard</div>
+      <div class="inline">
+        <input id="revoked-token" type="password" placeholder="Device token" aria-label="Device token" autocomplete="off" spellcheck="false">
+        <button id="revoked-save" type="button">Save</button>
+      </div>
+    </div>
+    <div id="psn" class="line warn" hidden>
+      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6v4M8 11.7v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span id="psn-text"></span>
+      <button id="psn-renew" type="button" class="small">Renew</button>
+    </div>
+  </section>
+
+  <footer>
+    <button id="btn-settings" type="button">Settings</button>
+    <button id="btn-pause" type="button">Pause</button>
+  </footer>
+</main>
+
+<main id="settings-view" hidden>
+  <h1>Settings</h1>
+  <label class="field">Server URL
+    <input id="server-url" type="url" spellcheck="false" autocomplete="off">
+  </label>
+  <div class="field">Device token
+    <div class="inline">
+      <code id="token-masked" class="grow">Not set</code>
+      <button id="token-paste" type="button" class="small">Paste</button>
+      <button id="token-remove" type="button" class="small">Remove</button>
+    </div>
+  </div>
+  <label class="check"><input id="autostart" type="checkbox"> Start with Windows</label>
+  <div class="field">Ignored games
+    <ul id="ignored" class="chips"></ul>
+  </div>
+  <div id="settings-error" class="error" role="alert" hidden></div>
+  <footer>
+    <button id="btn-back" type="button">Cancel</button>
+    <button id="btn-save" type="button" class="primary">Save</button>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
