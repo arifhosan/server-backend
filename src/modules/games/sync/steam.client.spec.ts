@@ -57,6 +57,8 @@ describe('SteamClient', () => {
         platform: 'steam',
         externalId: '1091500',
         title: 'Cyberpunk 2077',
+        imageUrl:
+          'https://cdn.cloudflare.steamstatic.com/steam/apps/1091500/header.jpg',
         totalSeconds: 5400,
         lastPlayedAt: new Date(1795500000 * 1000),
       },

@@ -7,6 +7,7 @@ export interface ObservedTitle {
   title: string;
   totalSeconds: number;
   lastPlayedAt?: Date;
+  imageUrl?: string;
 }
 
 export interface PlatformClient {

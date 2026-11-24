@@ -97,6 +97,13 @@ describe('SyncService', () => {
         {
           create: (d: Row) => d,
           save: saveTo(games),
+          update: (id: number, p: Row) => {
+            Object.assign(
+              games.find((g) => g.id === id)!,
+              p,
+            );
+            return Promise.resolve();
+          },
           findOneBy: (w: Row) => Promise.resolve(match(games, w)[0] ?? null),
           findOne: ({ where }: { where: Row }) =>
             Promise.resolve(match(games, where)[0] ?? null),
@@ -151,6 +158,15 @@ describe('SyncService', () => {
       key,
       { steam: client, psn: client },
     );
+  });
+
+  it('persists the observed image url', async () => {
+    conn();
+    fetchTitles.mockResolvedValue({
+      titles: [steamTitle({ imageUrl: 'https://img/x.jpg' })],
+    });
+    await service.syncConnection(1, now);
+    expect(games[0].imageUrl).toBe('https://img/x.jpg');
   });
 
   it('rejects a second concurrent sync for the same connection', async () => {

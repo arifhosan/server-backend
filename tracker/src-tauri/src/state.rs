@@ -40,7 +40,7 @@ pub enum Connection {
     NoToken,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct PsnBanner {
     /// "expiring" | "expired"
     pub status: String,

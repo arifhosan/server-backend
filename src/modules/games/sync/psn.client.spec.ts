@@ -152,6 +152,7 @@ describe('PsnClient', () => {
         platform: 'ps5',
         externalId: 'PPSA1_00',
         title: 'Game 1',
+        imageUrl: 'https://img',
         totalSeconds: 3600,
         lastPlayedAt: new Date('2026-11-20T10:00:00Z'),
       },

@@ -75,6 +75,18 @@ pub enum SendError {
     Server(u16),
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PsnStatus {
+    pub status: String,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+pub struct TrackerStatus {
+    pub psn: Option<PsnStatus>,
+}
+
 pub struct Api {
     base: String,
     url: String,
@@ -116,6 +128,20 @@ impl Api {
             .map_err(|e| SendError::Network(e.without_url().to_string()))?;
         match res.status().as_u16() {
             200..=299 => Ok(()),
+            401 => Err(SendError::Unauthorized),
+            c => Err(SendError::Server(c)),
+        }
+    }
+
+    pub fn tracker_status(&self, token: &str) -> Result<TrackerStatus, SendError> {
+        let res = self
+            .http
+            .get(format!("{}/games/tracker/status", self.base))
+            .bearer_auth(token)
+            .send()
+            .map_err(|e| SendError::Network(e.without_url().to_string()))?;
+        match res.status().as_u16() {
+            200..=299 => res.json().map_err(|e| SendError::Network(e.without_url().to_string())),
             401 => Err(SendError::Unauthorized),
             c => Err(SendError::Server(c)),
         }
