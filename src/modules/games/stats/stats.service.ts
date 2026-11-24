@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { toPublicConnection } from '../connections/connections.service';
 import { Connection } from '../entities/connection.entity';
 import { Device } from '../entities/device.entity';
@@ -114,7 +114,7 @@ export class StatsService {
         where: {
           userId,
           startedAt: LessThan(localMidnight(addDays(to, 1), tz)),
-          endedAt: MoreThanOrEqual(localMidnight(from, tz)),
+          endedAt: MoreThan(localMidnight(from, tz)),
         },
       }),
       this.games.find({ where: { userId } }),
@@ -137,6 +137,7 @@ export class StatsService {
     from: string,
     to: string,
     tz: string,
+    now = new Date(),
   ): Promise<Map<string, Provider[]>> {
     const out = new Map<string, Provider[]>();
     const conns = await this.connections.find({ where: { userId } });
@@ -144,13 +145,14 @@ export class StatsService {
     const runs = await this.runs.find({
       where: { connectionId: In(conns.map((c) => c.id)) },
     });
-    for (const c of conns)
+    for (const c of conns.filter((c) => c.status !== 'disabled'))
       for (const day of unknownDays(
         runs.filter((r) => r.connectionId === c.id),
         c.createdAt,
         from,
         to,
         tz,
+        now,
       ))
         out.set(day, [...(out.get(day) ?? []), c.provider]);
     return out;
@@ -217,7 +219,7 @@ export class StatsService {
     const from = [addDays(monday, -7), from30].sort()[0];
     const [data, unknown, nowPlaying, conns, devices] = await Promise.all([
       this.chartSessions(userId, from, today, tz),
-      this.unknownByDay(userId, from30, today, tz),
+      this.unknownByDay(userId, from30, today, tz, now),
       this.tracker.nowPlaying(userId, now),
       this.connections.find({ where: { userId } }),
       this.devices.find({ where: { userId } }),
@@ -411,8 +413,12 @@ export class StatsService {
       this.chartSessions(userId, q.from, q.to, tz, q.platform),
       this.unknownByDay(userId, q.from, q.to, tz),
     ]);
+    // Only sessions with a slice inside the range count towards the per-game stats.
+    const inRange = data.sessions.filter((s) =>
+      [...splitIntoDays([s], tz).keys()].some((d) => d >= q.from && d <= q.to),
+    );
     const perGame = this.groupDays(
-      this.groups(data.sessions, data.games),
+      this.groups(inRange, data.games),
       q.from,
       q.to,
       tz,
@@ -426,7 +432,8 @@ export class StatsService {
           seconds: cur.seconds + v.seconds,
           estimated: cur.estimated || v.estimated,
         });
-        dayGames.push({ date, titleKey: x.titleKey, seconds: v.seconds });
+        if (v.seconds > 0)
+          dayGames.push({ date, titleKey: x.titleKey, seconds: v.seconds });
       }
     return {
       days: this.dense(total, q.from, q.to, unknown),

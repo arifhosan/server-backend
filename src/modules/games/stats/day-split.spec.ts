@@ -77,6 +77,45 @@ describe('day-split', () => {
     expect([...m.values()].reduce((a, v) => a + v.seconds, 0)).toBe(1000);
   });
 
+  it('unknownDays starts at creation when that is later than from', () => {
+    const runs = [{ startedAt: d('2026-11-20T10:00:00Z'), ok: false }];
+    expect(
+      unknownDays(
+        runs,
+        d('2026-11-22T10:00:00Z'),
+        '2026-11-20',
+        '2026-11-23',
+        'Europe/Berlin',
+        d('2026-11-30T10:00:00Z'),
+      ),
+    ).toEqual(['2026-11-22', '2026-11-23']);
+  });
+
+  it('never produces negative parts with few seconds over many days', () => {
+    for (const [secs, hours] of [
+      [60, 120 * 24],
+      [2, 96],
+      [1, 72],
+      [7, 1000],
+    ]) {
+      const m = splitIntoDays(
+        [
+          one(
+            '2026-01-01T00:00:00Z',
+            new Date(
+              Date.parse('2026-01-01T00:00:00Z') + hours * 3600_000,
+            ).toISOString(),
+            secs,
+          ),
+        ],
+        'Europe/Berlin',
+      );
+      const parts = [...m.values()].map((v) => v.seconds);
+      expect(Math.min(...parts)).toBeGreaterThanOrEqual(0);
+      expect(parts.reduce((a, b) => a + b, 0)).toBe(secs);
+    }
+  });
+
   it('unknownDays lists days without an ok run', () => {
     expect(
       unknownDays(
@@ -89,11 +128,12 @@ describe('day-split', () => {
         '2026-11-21',
         '2026-11-23',
         'Europe/Berlin',
+        d('2026-11-30T10:00:00Z'),
       ),
     ).toEqual(['2026-11-22']);
   });
 
-  it('unknownDays skips days before creation or before the run history', () => {
+  it('unknownDays skips days before the run history and today', () => {
     const runs = [{ startedAt: d('2026-11-23T10:00:00Z'), ok: true }];
     expect(
       unknownDays(
@@ -102,8 +142,19 @@ describe('day-split', () => {
         '2026-11-01',
         '2026-11-25',
         'Europe/Berlin',
+        d('2026-11-26T10:00:00Z'),
       ),
     ).toEqual(['2026-11-24', '2026-11-25']);
+    expect(
+      unknownDays(
+        runs,
+        d('2026-11-01T00:00:00Z'),
+        '2026-11-01',
+        '2026-11-25',
+        'Europe/Berlin',
+        d('2026-11-25T10:00:00Z'),
+      ),
+    ).toEqual(['2026-11-24']);
     expect(
       unknownDays(
         [],
