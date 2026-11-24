@@ -1,0 +1,58 @@
+name: Tracker release
+
+on:
+  push:
+    tags: ['tracker-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tracker/src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Check tag matches app version
+        run: |
+          v=$(jq -r .version tracker/src-tauri/tauri.conf.json)
+          [ "$GITHUB_REF_NAME" = "tracker-v$v" ] || { echo "tag $GITHUB_REF_NAME != tracker-v$v"; exit 1; }
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Build installer (signed updater artifacts)
+        working-directory: tracker/src-tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+
+      - name: Stage assets and latest.json
+        working-directory: tracker/src-tauri/target/release/bundle/nsis
+        run: |
+          cp ./*-setup.exe GameTracker-setup.exe
+          cp ./*-setup.exe.sig GameTracker-setup.exe.sig
+          jq -n --arg v "$VERSION" \
+            --arg sig "$(cat GameTracker-setup.exe.sig)" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/GameTracker-setup.exe" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version:$v, pub_date:$date, platforms:{"windows-x86_64":{signature:$sig, url:$url}}}' > latest.json
+
+      - name: Publish release (marked latest)
+        working-directory: tracker/src-tauri/target/release/bundle/nsis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Game Tracker $VERSION" --generate-notes --latest \
+            GameTracker-setup.exe GameTracker-setup.exe.sig latest.json

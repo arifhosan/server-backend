@@ -222,6 +222,23 @@ fn start_detection(app: AppHandle) {
     });
 }
 
+/// Check for an update at start and then once a day; installing restarts the app.
+fn spawn_updater(app: AppHandle) {
+    use tauri_plugin_updater::UpdaterExt as _;
+    std::thread::spawn(move || loop {
+        tauri::async_runtime::block_on(async {
+            if let Ok(updater) = app.updater() {
+                if let Ok(Some(update)) = updater.check().await {
+                    if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
+                        app.restart();
+                    }
+                }
+            }
+        });
+        std::thread::sleep(Duration::from_secs(24 * 60 * 60));
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -234,6 +251,7 @@ fn main() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_state, get_settings, save_settings, set_token, remove_token, set_paused, unignore, open_dashboard
         ])
@@ -287,6 +305,7 @@ fn main() {
             app.manage(Tray { icon, pause });
 
             start_detection(app.handle().clone());
+            spawn_updater(app.handle().clone());
 
             // Autostarted launches stay in the tray; a manual launch opens the window.
             if !std::env::args().any(|a| a == "--autostart") {
