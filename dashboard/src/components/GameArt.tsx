@@ -1,37 +1,29 @@
-import { useState } from 'react';
 import '../styles/library.css';
+import { useState } from 'react';
+import '../styles/overview.css';
 
-export interface GameArtProps {
+const TILES = ['#2a3442', '#26362e', '#382a2a', '#2e2a3a', '#3a2f24', '#2f3329'];
+
+interface Props {
   imageUrl: string | null;
   hasIcon: boolean;
   libraryGameId: number;
   title: string;
-  /** sm = 64x30 table thumbnail, lg = 368 wide hero. */
-  size?: 'sm' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-const initials = (title: string) =>
-  (title.match(/[\p{L}\p{N}]+/gu) ?? [])
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase() || '?';
-
-/** Stable dark tint per title so tiles are tellable apart. */
-const tint = (title: string) => {
-  let h = 0;
-  for (const c of title) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return `hsl(${h} 18% 20%)`;
-};
-
-/** imageUrl, else the stored icon, else an initials tile; a broken image falls back to the tile. */
-export function GameArt({ imageUrl, hasIcon, libraryGameId, title, size = 'sm' }: GameArtProps) {
+/** Cover image, else the game's icon, else an initials tile. A failed image falls back to the tile. */
+export function GameArt({ imageUrl, hasIcon, libraryGameId, title, size = 'md' }: Props) {
+  const [failed, setFailed] = useState(false);
   const src = imageUrl ?? (hasIcon ? `/api/games/library/${libraryGameId}/icon` : null);
-  const [failed, setFailed] = useState<string | null>(null);
-  const showImg = src !== null && failed !== src;
+  const cls = `art art-${size}`;
+  if (src && !failed) return <img className={cls} src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
+  const words = title.split(/\s+/).filter(Boolean);
+  const initials = (words.length > 1 ? words[0][0] + words[1][0] : title.slice(0, 2)).toUpperCase();
+  const hash = [...title].reduce((h, c) => h + c.charCodeAt(0), 0);
   return (
-    <span className={`art art-${size}`} style={showImg ? undefined : { background: tint(title) }} aria-hidden="true">
-      {showImg ? <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} /> : initials(title)}
+    <span className={`${cls} art-tile`} aria-hidden="true" style={{ background: TILES[hash % TILES.length] }}>
+      {initials}
     </span>
   );
 }

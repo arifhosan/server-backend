@@ -55,6 +55,7 @@ export interface DayPoint {
 }
 
 export interface TopGame extends GameArt {
+  libraryGameId: number;
   titleKey: string;
   title: string;
   seconds: number;
@@ -73,7 +74,7 @@ export interface Overview {
   };
 }
 
-export interface SessionRow {
+export interface SessionRow extends GameArt {
   id: number;
   libraryGameId: number;
   title: string;

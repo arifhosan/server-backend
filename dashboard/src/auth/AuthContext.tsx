@@ -17,6 +17,9 @@ export interface AuthValue {
   logout(): Promise<void>;
 }
 
+/** register succeeded but the automatic sign-in after it failed. */
+export class AccountCreatedError extends Error {}
+
 export const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -37,7 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(
     async (dto: RegisterDto) => {
       await api('/auth/register', json('POST', dto)); // does not log in
-      await login(dto.email, dto.password);
+      try {
+        await login(dto.email, dto.password);
+      } catch {
+        throw new AccountCreatedError('Account created. Sign in to continue.');
+      }
     },
     [login],
   );

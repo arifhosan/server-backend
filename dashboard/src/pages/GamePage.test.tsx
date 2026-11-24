@@ -30,8 +30,8 @@ const detail: GameDetail = {
   ],
   daily: [point(addDays(today, -40), 3600), point(addDays(today, -3), 1800), point(addDays(today, -1), 3600)],
   sessions: [
-    { id: 1, libraryGameId: 7, title: 'Cyberpunk 2077', platform: 'steam', source: 'tracker', deviceId: 5, startedAt: '2026-11-23T18:40:00Z', endedAt: '2026-11-23T21:55:00Z', seconds: 11700 },
-    { id: 2, libraryGameId: 8, title: 'Cyberpunk 2077', platform: 'ps5', source: 'psn', deviceId: null, startedAt: '2026-11-20T09:00:00Z', endedAt: '2026-11-20T10:00:00Z', seconds: 3600 },
+    { imageUrl: null, hasIcon: false, id: 1, libraryGameId: 7, title: 'Cyberpunk 2077', platform: 'steam', source: 'tracker', deviceId: 5, startedAt: '2026-11-23T18:40:00Z', endedAt: '2026-11-23T21:55:00Z', seconds: 11700 },
+    { imageUrl: null, hasIcon: false, id: 2, libraryGameId: 8, title: 'Cyberpunk 2077', platform: 'ps5', source: 'psn', deviceId: null, startedAt: '2026-11-20T09:00:00Z', endedAt: '2026-11-20T10:00:00Z', seconds: 3600 },
   ] satisfies SessionRow[],
 };
 
@@ -71,7 +71,7 @@ describe('GamePage', () => {
   it('fills the 30-day range from sparse points and states the key numbers', async () => {
     setup();
     const chart = await screen.findByRole('img', { name: /last 30 days/ });
-    expect(chart.querySelectorAll('.bar')).toHaveLength(30);
+    expect(chart.querySelectorAll('.day-bar')).toHaveLength(30);
     expect(chart.getAttribute('aria-label')).toMatch(/total 1h 30m/);
     expect(screen.getByText('Daily average').querySelector('strong')?.textContent).toBe('3m');
   });
@@ -80,9 +80,9 @@ describe('GamePage', () => {
     setup();
     await screen.findByRole('img', { name: /last 30 days/ });
     await userEvent.click(screen.getByRole('button', { name: '1 year' }));
-    expect(screen.getByRole('img', { name: /last 365 days/ }).querySelectorAll('.bar')).toHaveLength(365);
+    expect(screen.getByRole('img', { name: /last 365 days/ }).querySelectorAll('.day-bar')).toHaveLength(365);
     await userEvent.click(screen.getByRole('button', { name: 'All' }));
-    expect(screen.getByRole('img', { name: /since/ }).querySelectorAll('.bar')).toHaveLength(41);
+    expect(screen.getByRole('img', { name: /since/ }).querySelectorAll('.day-bar')).toHaveLength(41);
     expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
   });
 

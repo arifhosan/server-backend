@@ -101,7 +101,7 @@ export function LibraryPage() {
             {all.length} games across {platformCount} platforms · {hours.toLocaleString('en-US')} hours tracked
           </p>
         </div>
-        <label className="field">
+        <label className="lib-field">
           Search
           <input type="search" placeholder="Game title" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>

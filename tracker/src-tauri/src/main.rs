@@ -2,6 +2,7 @@
 
 mod api;
 mod detect;
+mod icons;
 mod library;
 mod queue;
 mod sender;
@@ -207,7 +208,7 @@ fn start_detection(app: AppHandle) {
                         .map(|(g, exe)| {
                             let key = format!("{}:{}", g.store.as_str(), g.store_id.as_deref().unwrap_or(&g.title));
                             let started_at = st.playing.iter().find(|r| r.key == key).map_or(now, |r| r.started_at);
-                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, started_at }
+                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, logo: g.logo, started_at }
                         })
                         .collect();
                     if !st.paused {

@@ -115,8 +115,6 @@ Authoritative list (README points here). Auth: **JWT** = the cookie or `Authoriz
 
 Game objects carry `imageUrl` (Steam CDN or PSN image, or null) and `hasIcon` (a tracker icon exists; fetch it from the icon route).
 
-The icon upload body is JSON: base64 of 64 KB is about 87 KB. `src/common/body-parsers.ts` gives `PUT /games/tracker/icon` a 128kb JSON limit (the Express default of 100kb applies elsewhere), so a PNG over 64 KB gets a 400.
-
 Public host: `games.server.arifhosan.me/api/*` (Traefik strips `/api`).
 
 ## Deploy runbook
@@ -126,7 +124,7 @@ Do these in order.
 1. `mysqldump api_db game game_old total_game_time playtime > legacy-YYYY-MM-DD.sql`
 2. Apply all SQL in this file.
 3. Set `STEAM_API_KEY` and `GAMES_SECRET_KEY` (`openssl rand -base64 32`) in the Portainer stack.
-4. Deploy the image.
+4. Deploy the image. The stack also runs the dashboard (`ghcr.io/arifhosan/server-dashboard:latest`, built by `.github/workflows/dashboard-image.yml` on pushes to `master` touching `dashboard/**`); redeploy the stack to pull a new one. It serves `games.server.arifhosan.me/`; `/api/*` still goes to the backend.
 5. Legacy import: dry run, then `--commit` (see below).
 6. Only then connect Steam and PSN; their first sync adopts the legacy rows.
 

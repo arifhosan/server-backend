@@ -240,6 +240,25 @@ describe('TrackerService', () => {
       ]);
     });
 
+    it('accepts exactly 65 536 decoded bytes', async () => {
+      const exact = Buffer.concat([
+        Buffer.from(PNG, 'base64'),
+        Buffer.alloc(65_536 - 70),
+      ]);
+      expect(exact.length).toBe(65_536);
+      await service.saveIcon(7, game, exact.toString('base64'));
+      expect(iconRows).toHaveLength(1);
+    });
+
+    it("resolves the game only within the device's user", async () => {
+      await service.ingest({ userId: 8, deviceId: 3 }, [hb(0)], now);
+      await service.saveIcon(7, game, PNG);
+      const other = gameRows.find((g) => g.userId === 8)!;
+      const mine = gameRows.find((g) => g.userId === 7)!;
+      expect(mine.id).not.toBe(other.id);
+      expect(iconRows.map((i) => i.libraryGameId)).toEqual([mine.id]);
+    });
+
     it('rejects more than 64 KB', async () => {
       const big = Buffer.concat([
         Buffer.from(PNG, 'base64'),

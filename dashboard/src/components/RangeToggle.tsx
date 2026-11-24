@@ -18,9 +18,9 @@ export function RangeToggle<T extends string>({
   label?: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="seg-group">
+    <div role="group" aria-label={label} className="range-group">
       {options.map((o) => (
-        <button key={o.id} type="button" className="seg" aria-pressed={o.id === value} onClick={() => onChange(o.id)}>
+        <button key={o.id} type="button" className="range-seg" aria-pressed={o.id === value} onClick={() => onChange(o.id)}>
           {o.label}
         </button>
       ))}

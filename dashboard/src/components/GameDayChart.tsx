@@ -19,7 +19,7 @@ export function GameDayChart({ days, label }: { days: DayPoint[]; label: string 
             <div
               key={d.date}
               title={tip(d)}
-              className={d.unknownSources.length ? 'bar bar-unknown' : 'bar'}
+              className={d.unknownSources.length ? 'day-bar day-bar-unknown' : 'day-bar'}
               style={{ height: d.unknownSources.length ? 170 : Math.round((d.seconds / max) * 170) }}
             />
           ))}

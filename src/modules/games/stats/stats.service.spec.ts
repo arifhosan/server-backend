@@ -205,6 +205,7 @@ describe('StatsService', () => {
     });
     const o = await service.overview(1, now);
     expect(o.topGames30d[0]).toMatchObject({
+      libraryGameId: 1,
       imageUrl: 'steam.jpg',
       hasIcon: true,
     });
@@ -214,7 +215,10 @@ describe('StatsService', () => {
     });
     expect(s[0]).toMatchObject({ imageUrl: 'steam.jpg' });
     const p = await service.period(1, { from: '2026-11-24', to: '2026-11-24' });
-    expect(p.games[0]).toMatchObject({ imageUrl: 'steam.jpg' });
+    expect(p.games[0]).toMatchObject({
+      libraryGameId: 1,
+      imageUrl: 'steam.jpg',
+    });
   });
 
   it("serves the icon of the user's own game only", async () => {

@@ -17,7 +17,7 @@
   font: inherit; font-size: 14px; font-weight: 600; flex: 1; border: 0; border-radius: 8px;
   min-height: 44px; cursor: pointer; background: transparent; color: var(--muted);
 }
-.tab-btn[aria-selected='true'] { background: var(--selected); color: var(--text); }
+.tab-btn[aria-pressed='true'] { background: var(--selected); color: var(--text); }
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .label { display: flex; flex-direction: column; gap: 6px; color: var(--text-label); font-size: 13px; font-weight: 500; }
@@ -25,9 +25,10 @@
   font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--field-border);
   border-radius: 8px; padding: 0 12px; min-height: 44px; width: 100%;
 }
+.field::placeholder { color: var(--faint); }
 .field[aria-invalid='true'] { border-color: var(--error); }
 .hint { color: var(--muted); font-weight: 400; }
-.hint.error { color: var(--error); }
+.hint.error, .field-err { color: var(--error); font-weight: 400; }
 .alert {
   border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error);
   border-radius: 8px; padding: 10px 12px; font-size: 13px;
@@ -41,3 +42,4 @@
 .note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .note.center { text-align: center; }
 @media (max-width: 400px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
+.notice { border: 1px solid var(--card-border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 13px; }

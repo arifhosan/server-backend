@@ -77,7 +77,7 @@ export function GamePage() {
       </Link>
 
       <section className="game-hero">
-        <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} libraryGameId={g.platforms[0]?.libraryGameId ?? 0} title={g.title} size="lg" />
+        <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} libraryGameId={g.platforms[0]?.libraryGameId ?? 0} title={g.title} size="xl" />
         <div className="game-hero-info">
           <h1>{g.title}</h1>
           <div className="chips">
