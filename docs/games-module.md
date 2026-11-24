@@ -185,3 +185,19 @@ fire once; before any connection exists it has nothing to do.
    the check fail, which fails safely (rollback).
 
 The dry-run report shows the would-be state (counts and `inserted` as if committed); the transaction is rolled back.
+
+### Library audit (read-only)
+
+Every Steam/PSN sync first repairs the user's library inside its transaction
+(`sync/repair-plan.ts`): titleKeys recomputed, PSN platforms taken from the
+title id (CUSA ps4, PPSA ps5), exact cross-gen duplicates and media apps
+deleted (kept and logged when they have sessions), synced rows folded into the
+matching unadopted legacy row (same titleKey, or one legacy row with an almost
+equal total and a similar title), first-sync sessions older than the last
+Exophase scrape deleted (< 5 min) or re-windowed. To see what it would do,
+without writing or calling PSN/Steam:
+
+`docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id>`
+
+It prints old (`total_game_time`) vs current vs after-repair hours per title
+group, the unadopted legacy rows, and the planned actions.

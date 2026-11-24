@@ -6,6 +6,8 @@ export interface DeltaInput {
   now: Date;
   alreadyTracked?: number;
   minRemainder?: number;
+  /** No play can have accrued before this (the last Exophase scrape the legacy totals carry). */
+  notBefore?: Date | null;
 }
 
 export interface DeltaResult {
@@ -23,7 +25,11 @@ export function decideDelta(i: DeltaInput): DeltaResult {
   if (i.priorSeconds === null) return { updateTotal: true, session: null };
   const delta = i.reportedSeconds - i.priorSeconds;
   if (delta <= 0) return { updateTotal: false, session: null };
-  const startedAt = i.windowStart ?? i.priorChangedAt ?? i.now;
+  const from = i.windowStart ?? i.priorChangedAt ?? i.now;
+  const startedAt =
+    i.notBefore && i.notBefore > from
+      ? new Date(Math.min(i.notBefore.getTime(), i.now.getTime()))
+      : from;
   const span = { startedAt, endedAt: i.now };
   if (delta > (i.now.getTime() - startedAt.getTime()) / 1000) {
     return {

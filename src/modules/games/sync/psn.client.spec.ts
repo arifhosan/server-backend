@@ -14,7 +14,9 @@ import {
   PsnClient,
   PsnPrivacyError,
   PsnSecret,
+  isPsnGame,
   psnPlatform,
+  psnPlatformFromTitle,
   psnStatus,
 } from './psn.client';
 
@@ -72,6 +74,49 @@ describe('helpers', () => {
     expect(psnPlatform('ps4_game')).toBe('ps4');
     expect(psnPlatform('ps5_native_game')).toBe('ps5');
     expect(psnPlatform('pspc_game')).toBe('ps5');
+  });
+  it('psnPlatformFromTitle: the title id wins over the category', () => {
+    expect(psnPlatformFromTitle('CUSA18278_00', 'ps5_native_game')).toBe('ps4');
+    expect(psnPlatformFromTitle('CUSA07408_00', 'unknown')).toBe('ps4');
+    expect(psnPlatformFromTitle('PPSA04029_00', 'ps4_game')).toBe('ps5');
+    expect(psnPlatformFromTitle('PPSA08329_00', 'ps5_native_game')).toBe('ps5');
+    // Any other id falls back to the category.
+    expect(psnPlatformFromTitle('NPWR12345_00', 'ps4_game')).toBe('ps4');
+    expect(psnPlatformFromTitle('XYZ', 'pspc_game')).toBe('ps5');
+  });
+  it('isPsnGame keeps games and drops media apps', () => {
+    expect(isPsnGame('CUSA1_00', 'ps4_game', 'God of War')).toBe(true);
+    expect(isPsnGame('PPSA1_00', 'ps5_native_game', 'Astro Bot')).toBe(true);
+    expect(isPsnGame('PPSA1_00', 'pspc_game', 'Astro Bot')).toBe(true);
+    for (const c of [
+      'ps4_nongame_mini_app',
+      'ps5_native_media_app',
+      'ps4_videoservice_web_app',
+      'ps5_web_based_media_app',
+    ])
+      expect(isPsnGame('CUSA1_00', c, 'Some App')).toBe(false);
+    // Unknown category: only a CUSA/PPSA id that is not a known app.
+    expect(isPsnGame('CUSA1_00', 'unknown', 'Bloodborne')).toBe(true);
+    expect(isPsnGame('PPSA1_00', '', 'Bloodborne')).toBe(true);
+    expect(isPsnGame('NPXX1_00', 'unknown', 'Bloodborne')).toBe(false);
+    for (const app of [
+      'Netflix',
+      'YouTube',
+      'Prime Video',
+      'Disney+',
+      'Spotify',
+      'Twitch',
+      'Apple TV',
+      'Plex',
+      'Crunchyroll',
+      'Media Player',
+    ])
+      expect(isPsnGame('CUSA1_00', 'unknown', app)).toBe(false);
+    // Known app names are matched whole, even under a game category.
+    expect(isPsnGame('CUSA1_00', 'ps4_game', 'Netflix')).toBe(false);
+    expect(
+      isPsnGame('PPSA1_00', 'ps5_native_game', 'Disney Dreamlight Valley'),
+    ).toBe(true);
   });
   it('psnStatus', () => {
     const now = new Date('2026-11-24T00:00:00Z');
@@ -323,6 +368,32 @@ describe('PsnClient', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith('Skipped 4 malformed PSN titles');
     warn.mockRestore();
+  });
+
+  it('maps CUSA ids to ps4 whatever the category, and leaves media apps out', async () => {
+    mPlayed.mockResolvedValue({
+      totalItemCount: 3,
+      titles: [
+        { ...title(1), titleId: 'CUSA18278_00', category: 'ps5_native_game' },
+        {
+          ...title(2),
+          titleId: 'CUSA00127_00',
+          name: 'Netflix',
+          category: 'ps4_videoservice_web_app',
+        },
+        {
+          ...title(3),
+          titleId: 'PPSA02222_00',
+          name: 'YouTube',
+          category: 'unknown',
+        },
+      ],
+    } as never);
+    const r = await client.fetchTitles(conn, secret());
+    expect(r.titles).toEqual([
+      expect.objectContaining({ platform: 'ps4', externalId: 'CUSA18278_00' }),
+    ]);
+    expect(r.ignoredIds).toEqual(['CUSA00127_00', 'PPSA02222_00']);
   });
 
   it('wraps psn-api errors in SyncFailedError without tokens', async () => {

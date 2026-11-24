@@ -19,6 +19,35 @@ describe('decideDelta', () => {
     }
   });
 
+  it('starts no earlier than notBefore (the last legacy scrape)', () => {
+    const scrape = ago(1);
+    const old = new Date('2025-04-29T00:00:00Z');
+    const r = (o: object) =>
+      decideDelta({ ...base, priorSeconds: 1000, reportedSeconds: 2800, ...o });
+    // First sync on an adopted legacy row: the window was the April 2025 baseline.
+    expect(
+      r({ windowStart: null, priorChangedAt: old, notBefore: scrape }).session,
+    ).toEqual({
+      source: 'platform',
+      seconds: 1800,
+      startedAt: scrape,
+      endedAt: now,
+    });
+    // A later window start wins; a missing or future notBefore never breaks the span.
+    expect(r({ notBefore: ago(5) }).session?.startedAt).toEqual(ago(2));
+    expect(r({ notBefore: null }).session?.startedAt).toEqual(ago(2));
+    expect(r({ notBefore: ago(-1) }).session?.startedAt).toEqual(now);
+    // A delta longer than the narrowed window is an import.
+    expect(
+      r({
+        windowStart: null,
+        priorChangedAt: old,
+        notBefore: scrape,
+        reportedSeconds: 1000 + 7200,
+      }).session?.source,
+    ).toBe('import');
+  });
+
   it('makes a platform session for a normal delta', () => {
     const r = decideDelta({
       ...base,

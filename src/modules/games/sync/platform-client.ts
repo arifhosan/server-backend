@@ -17,6 +17,8 @@ export interface PlatformClient {
     secret: string | null,
   ): Promise<{
     titles: ObservedTitle[];
+    /** Ids the platform listed but that are not games (PSN media apps). */
+    ignoredIds?: string[];
     secret?: string;
     secretExpiresAt?: Date;
   }>;

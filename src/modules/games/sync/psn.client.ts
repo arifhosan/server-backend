@@ -10,6 +10,7 @@ import {
 } from 'psn-api';
 import { Connection } from '../entities/connection.entity';
 import { ConnectionStatus, Platform } from '../games.types';
+import { titleKey } from '../utils/title-key';
 import {
   ObservedTitle,
   PlatformClient,
@@ -50,6 +51,65 @@ export function parseIsoDuration(value: string): number {
 
 export function psnPlatform(category: string): Platform {
   return category === 'ps4_game' ? 'ps4' : 'ps5';
+}
+
+/**
+ * Platform implied by a PSN title id: every PS4 title id is CUSA, every PS5 one PPSA
+ * (psn-api docs). PSN's `category` is unreliable for cross-gen titles. Other ids: undefined.
+ */
+export function psnTitlePlatform(titleId: string): Platform | undefined {
+  if (titleId.startsWith('CUSA')) return 'ps4';
+  if (titleId.startsWith('PPSA')) return 'ps5';
+  return undefined;
+}
+
+export function psnPlatformFromTitle(
+  titleId: string,
+  category: string,
+): Platform {
+  return psnTitlePlatform(titleId) ?? psnPlatform(category);
+}
+
+/** Categories psn-api documents for played games; the rest are apps (e.g. *_nongame_*, *_media_app). */
+const PSN_GAME_CATEGORIES = new Set([
+  'ps4_game',
+  'ps5_native_game',
+  'pspc_game',
+]);
+/** Whole-title matches only ("Disney Dreamlight Valley" is a game). */
+const PSN_APPS = new Set(
+  [
+    'Netflix',
+    'YouTube',
+    'YouTube TV',
+    'Prime Video',
+    'Amazon Prime Video',
+    'Disney+',
+    'Disney Plus',
+    'Spotify',
+    'Twitch',
+    'Apple TV',
+    'Apple TV+',
+    'Plex',
+    'Crunchyroll',
+    'Media Player',
+  ].map(titleKey),
+);
+
+export function isKnownPsnApp(name: string): boolean {
+  return PSN_APPS.has(titleKey(name));
+}
+
+/** Media apps (Netflix, ...) show up among played games; they are not games. */
+export function isPsnGame(
+  titleId: string,
+  category: string,
+  name: string,
+): boolean {
+  if (isKnownPsnApp(name)) return false;
+  if (PSN_GAME_CATEGORIES.has(category)) return true;
+  if (/nongame|media|video|app/.test(category)) return false;
+  return psnTitlePlatform(titleId) !== undefined; // 'unknown' and anything new
 }
 
 export function psnStatus(refreshExpiresAt: Date, now: Date): ConnectionStatus {
@@ -120,7 +180,7 @@ export function toObserved(t: PlayedTitle): ObservedTitle | null {
     return null;
   }
   return {
-    platform: psnPlatform(t.category),
+    platform: psnPlatformFromTitle(t.titleId, t.category),
     externalId: t.titleId,
     title: name,
     imageUrl: t.imageUrl || undefined,
@@ -215,6 +275,7 @@ export class PsnClient implements PlatformClient {
     sealed: string | null,
   ): Promise<{
     titles: ObservedTitle[];
+    ignoredIds: string[];
     secret?: string;
     secretExpiresAt?: Date;
   }> {
@@ -244,6 +305,7 @@ export class PsnClient implements PlatformClient {
     }
 
     const titles: ObservedTitle[] = [];
+    const ignoredIds: string[] = [];
     let skipped = 0;
     try {
       const auth = { accessToken: s.accessToken };
@@ -257,8 +319,10 @@ export class PsnClient implements PlatformClient {
         if (!page.titles.length) break;
         for (const t of page.titles) {
           const title = toObserved(t);
-          if (title) titles.push(title);
-          else skipped++;
+          if (!title) skipped++;
+          else if (isPsnGame(t.titleId, String(t.category ?? ''), title.title))
+            titles.push(title);
+          else ignoredIds.push(title.externalId);
         }
       }
     } catch {
@@ -269,10 +333,11 @@ export class PsnClient implements PlatformClient {
     return refreshed
       ? {
           titles,
+          ignoredIds,
           secret: JSON.stringify(s),
           secretExpiresAt: new Date(s.npssoExpiresAt),
         }
-      : { titles };
+      : { titles, ignoredIds };
   }
 
   statusAfter(secretExpiresAt: Date | null, now: Date): ConnectionStatus {

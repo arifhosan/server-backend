@@ -13,4 +13,11 @@ describe('titleKey', () => {
     );
     expect(titleKey('Pokémon™ Legends')).toBe('pokemon legends');
   });
+
+  it('drops every apostrophe look-alike and ™ ® ©', () => {
+    for (const q of ["'", '‘', '’', '‛', 'ʼ', '`', '´', '′'])
+      expect(titleKey(`Tom Clancy${q}s Rainbow Six® Siege©™`)).toBe(
+        'tom clancys rainbow six siege',
+      );
+  });
 });
