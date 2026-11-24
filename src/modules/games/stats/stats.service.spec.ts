@@ -234,7 +234,7 @@ describe('StatsService', () => {
     sess(1, 'tracker', '2026-11-22T21:00:00Z', '2026-11-22T22:00:00Z', 3600);
     sess(3, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 600);
     // A 0 s session on another game: counted, but no dayGames row.
-    sess(2, 'psn', '2026-11-23T10:00:00Z', '2026-11-23T11:00:00Z', 0);
+    sess(2, 'tracker', '2026-11-23T10:00:00Z', '2026-11-23T11:00:00Z', 0);
     const p = await service.period(1, { from: '2026-11-23', to: '2026-11-24' });
     expect(p.games.map((g) => [g.titleKey, g.sessionCount])).toEqual([
       ['trackeronly', 1],
@@ -243,6 +243,110 @@ describe('StatsService', () => {
     expect(p.dayGames).toEqual([
       { date: '2026-11-24', titleKey: 'trackeronly', seconds: 600 },
     ]);
+  });
+
+  describe('PSN/Steam noise and undated sessions', () => {
+    const h = (x: number) => Math.round(x * 3600);
+    beforeEach(() => {
+      game({
+        id: 6,
+        platform: 'ps5',
+        title: 'Grand Theft Auto V',
+        totalSeconds: h(300),
+      });
+      // GTA: one sync delta whose window is 11-22 00:00 -> 11-24 19:34 Berlin, 11.8 h.
+      sess(6, 'psn', '2026-11-21T23:00:00Z', '2026-11-24T18:34:00Z', h(11.8));
+      // 4 s of noise.
+      sess(2, 'psn', '2026-11-24T08:00:00Z', '2026-11-24T08:00:04Z', 4);
+      // 1 h of PSN within 11-24: a dated session.
+      sess(2, 'psn', '2026-11-24T06:00:00Z', '2026-11-24T07:00:00Z', 3600);
+      // Tracker 23:30-00:30 Berlin (22:30Z-23:30Z): split across midnight as before.
+      sess(3, 'tracker', '2026-11-22T22:30:00Z', '2026-11-22T23:30:00Z', 3600);
+    });
+    const dayOf = (
+      p: { days: { date: string; seconds: number }[] },
+      d: string,
+    ) => p.days.find((x) => x.date === d)?.seconds ?? 0;
+
+    it('week 11-23..29: GTA is not inside, so it is in no total and no bar', async () => {
+      const p = await service.period(1, {
+        from: '2026-11-23',
+        to: '2026-11-29',
+      });
+      expect(p.games.map((g) => g.titleKey)).not.toContain('grandtheftautov');
+      expect(p.undatedSeconds).toBe(0);
+      expect(dayOf(p, '2026-11-24')).toBe(3600);
+      expect(dayOf(p, '2026-11-23')).toBe(1800); // the tracker half after midnight
+      expect(p.dayGames.some((x) => x.titleKey === 'grandtheftautov')).toBe(
+        false,
+      );
+    });
+
+    it('November: GTA is in the games and undatedSeconds, never in a day bar', async () => {
+      const p = await service.period(1, {
+        from: '2026-11-01',
+        to: '2026-11-30',
+      });
+      const gta = p.games.find((g) => g.titleKey === 'grandtheftautov');
+      expect(gta).toMatchObject({ seconds: h(11.8), sessionCount: 1 });
+      expect(p.undatedSeconds).toBe(h(11.8));
+      expect(p.dayGames.some((x) => x.titleKey === 'grandtheftautov')).toBe(
+        false,
+      );
+      const bars = p.days.reduce((a, d) => a + d.seconds, 0);
+      const games = p.games.reduce((a, g) => a + g.seconds, 0);
+      expect(bars + p.undatedSeconds).toBe(games);
+      expect(dayOf(p, '2026-11-22')).toBe(1800);
+      expect(dayOf(p, '2026-11-23')).toBe(1800);
+      expect(dayOf(p, '2026-11-24')).toBe(3600); // the 1 h PSN session, no noise, no GTA
+      // The 4 s session counts nowhere: Cyberpunk has only the 1 h one.
+      expect(p.games.find((g) => g.titleKey === 'cyberpunk2077')).toMatchObject(
+        {
+          seconds: 3600,
+          sessionCount: 1,
+        },
+      );
+    });
+
+    it('overview: GTA counts in the 30 days and top games, not in today or this week', async () => {
+      const o = await service.overview(1, new Date('2026-11-24T19:00:00Z'));
+      expect(o.today).toBe(3600);
+      expect(o.thisWeek).toBe(1800 + 3600); // Monday 11-23
+      expect(o.undatedSeconds).toBe(h(11.8));
+      expect(
+        o.topGames30d.find((g) => g.titleKey === 'grandtheftautov')?.seconds,
+      ).toBe(h(11.8));
+      expect(o.last30Days.reduce((a, d) => a + d.seconds, 0)).toBe(
+        1800 + 1800 + 3600,
+      );
+    });
+
+    it('game page: no daily point for GTA, undatedSeconds instead; noise hidden from the list', async () => {
+      const gta = await service.game(1, 6);
+      expect(gta.daily).toEqual([]);
+      expect(gta.undatedSeconds).toBe(h(11.8));
+      expect(gta.sessions).toHaveLength(1);
+      const cp = await service.game(1, 2);
+      expect(cp.sessions.map((x) => x.seconds)).toEqual([3600]);
+      expect(cp.undatedSeconds).toBe(0);
+    });
+
+    it('session list and library sums drop noise', async () => {
+      const list = await service.sessions(1, {
+        from: '2026-11-24',
+        to: '2026-11-24',
+      });
+      expect(list.some((x) => x.seconds === 4)).toBe(false);
+      // Steam row 1 has no reported total: its library total is a session sum without noise.
+      sess(1, 'steam', '2026-11-24T08:00:00Z', '2026-11-24T08:00:10Z', 10);
+      sess(1, 'steam', '2026-11-24T09:00:00Z', '2026-11-24T10:00:00Z', 3600);
+      const [cp] = (await service.library(1, {})).filter(
+        (e) => e.titleKey === 'cyberpunk2077',
+      );
+      expect(
+        cp.platforms.find((x) => x.platform === 'steam')?.totalSeconds,
+      ).toBe(3600);
+    });
   });
 
   it('rejects ranges over 366 days and bad dates', async () => {

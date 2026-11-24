@@ -31,6 +31,7 @@ h1, h2 { font-family: var(--font-display); }
 
 /* shared utilities: defined once, here */
 .muted { color: var(--muted); }
+.undated-note { margin: 8px 0 0; font-size: 13px; }
 .small { font-size: 13px; }
 .strong { font-weight: 600; }
 .chart-scroll { overflow-x: auto; }

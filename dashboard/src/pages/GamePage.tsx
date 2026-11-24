@@ -9,6 +9,7 @@ import { GameDayChart } from '../components/GameDayChart';
 import { PlatformChip } from '../components/PlatformChip';
 import { RangeToggle } from '../components/RangeToggle';
 import { Spinner } from '../components/Spinner';
+import { UndatedNote } from '../components/UndatedNote';
 import { addDays, dayOf, fillDays, relativeDay, shortDay, todayIn } from '../lib/dates';
 import { formatDuration } from '../lib/format';
 import { PLATFORM_LABEL } from '../lib/sort';
@@ -130,6 +131,8 @@ export function GamePage() {
           </span>
         </div>
         <GameDayChart days={chart.days} label={chart.label} />
+        {/* Undated play is known only as an all-time sum, so it is noted on the all-time view. */}
+        {range === 'all' && <UndatedNote seconds={g.undatedSeconds} />}
       </section>
 
       <section aria-labelledby="g-sess" className="sessions">

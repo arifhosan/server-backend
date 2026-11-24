@@ -30,6 +30,13 @@ import {
 } from './day-split';
 import { DAY } from './stats.dto';
 import {
+  Undated,
+  isNoise,
+  partitionSessions,
+  seconds,
+  undatedIn,
+} from './undated';
+import {
   DayPoint,
   GameDetail,
   LibraryEntry,
@@ -74,6 +81,8 @@ interface Group {
   platforms: Set<Platform>;
   sessions: PlaySession[];
 }
+
+type Parts = { dated: PlaySession[]; undated: Undated<PlaySession>[] };
 
 @Injectable()
 export class StatsService {
@@ -143,7 +152,7 @@ export class StatsService {
     }
   }
 
-  /** Chart sessions overlapping local days [from, to], newest first, with their games. */
+  /** Chart sessions overlapping local days [from, to], newest first, with their games; noise dropped. */
   private async chartSessions(
     userId: number,
     from: string,
@@ -166,6 +175,7 @@ export class StatsService {
       .filter(
         (s) =>
           !CHART_EXCLUDED_SOURCES.includes(s.source) &&
+          !isNoise(s) &&
           byId.has(s.libraryGameId) &&
           (!platform || byId.get(s.libraryGameId)?.platform === platform),
       )
@@ -234,22 +244,43 @@ export class StatsService {
     return out;
   }
 
-  /** Per-group day slices clipped to [from, to]. */
-  private groupDays(
-    groups: Map<string, Group>,
+  /**
+   * Per-group play in local days [from, to]: dated sessions with a slice in the range (day slices
+   * clipped to it), plus undated ones whose whole window lies inside (no slice).
+   */
+  private rangeGroups(
+    parts: Parts,
+    games: Map<number, LibraryGame>,
     from: string,
     to: string,
     tz: string,
   ) {
-    return [...groups].map(([titleKey, g]) => {
-      const slices = new Map(
-        [...splitIntoDays(g.sessions, tz)].filter(
-          ([d]) => d >= from && d <= to,
-        ),
-      );
-      const seconds = [...slices.values()].reduce((a, v) => a + v.seconds, 0);
-      return { titleKey, g, slices, seconds };
-    });
+    const undated = new Set(undatedIn(parts.undated, from, to).map((u) => u.s));
+    const dated = parts.dated.filter((s) =>
+      [...splitIntoDays([s], tz).keys()].some((d) => d >= from && d <= to),
+    );
+    return [...this.groups([...dated, ...undated], games)].map(
+      ([titleKey, g]) => {
+        const slices = new Map(
+          [
+            ...splitIntoDays(
+              g.sessions.filter((s) => !undated.has(s)),
+              tz,
+            ),
+          ].filter(([d]) => d >= from && d <= to),
+        );
+        const undatedSeconds = seconds(
+          g.sessions.filter((s) => undated.has(s)),
+        );
+        return {
+          titleKey,
+          g,
+          slices,
+          undatedSeconds,
+          seconds: seconds([...slices.values()]) + undatedSeconds,
+        };
+      },
+    );
   }
 
   async overview(userId: number, now = new Date()): Promise<Overview> {
@@ -268,15 +299,14 @@ export class StatsService {
     ]);
     const artOf = await this.artIndex(data.games.values());
     const primary = this.primaryIds(data.games.values());
-    const all = splitIntoDays(data.sessions, tz);
+    const parts = partitionSessions(data.sessions, tz);
+    const all = splitIntoDays(parts.dated, tz);
+    const undatedSum = (a: string, b: string) =>
+      seconds(undatedIn(parts.undated, a, b).map((u) => u.s));
     const sum = (a: string, b: string) =>
-      days(a, b).reduce((t, d) => t + (all.get(d)?.seconds ?? 0), 0);
-    const topGames30d = this.groupDays(
-      this.groups(data.sessions, data.games),
-      from30,
-      today,
-      tz,
-    )
+      days(a, b).reduce((t, d) => t + (all.get(d)?.seconds ?? 0), 0) +
+      undatedSum(a, b);
+    const topGames30d = this.rangeGroups(parts, data.games, from30, today, tz)
       .filter((x) => x.seconds > 0)
       .sort((a, b) => b.seconds - a.seconds)
       .slice(0, 10)
@@ -294,6 +324,7 @@ export class StatsService {
       lastWeek: sum(addDays(monday, -7), addDays(monday, -1)),
       last30Days: this.dense(all, from30, today, unknown),
       topGames30d,
+      undatedSeconds: undatedSum(from30, today),
       health: {
         connections: conns.map(toPublicConnection),
         devices: devices
@@ -361,7 +392,7 @@ export class StatsService {
         where: { userId, libraryGameId: In(unreported.map((g) => g.id)) },
       });
       for (const s of rows)
-        if (!TOTAL_EXCLUDED_SOURCES.includes(s.source))
+        if (!TOTAL_EXCLUDED_SOURCES.includes(s.source) && !isNoise(s))
           sums.set(
             s.libraryGameId,
             (sums.get(s.libraryGameId) ?? 0) + s.seconds,
@@ -429,11 +460,12 @@ export class StatsService {
       this.artIndex(members),
     ]);
     const chart = rows
-      .filter((s) => !CHART_EXCLUDED_SOURCES.includes(s.source))
+      .filter((s) => !CHART_EXCLUDED_SOURCES.includes(s.source) && !isNoise(s))
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     const byId = new Map(members.map((m) => [m.id, m]));
+    const parts = partitionSessions(chart, tz);
     // Only days with play: the client fills the gaps for its 30d/90d/1y/all windows.
-    const daily = [...splitIntoDays(chart, tz)]
+    const daily = [...splitIntoDays(parts.dated, tz)]
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .map(([date, v]) => ({
         date,
@@ -449,6 +481,7 @@ export class StatsService {
         .map((s) =>
           this.row(s, byId.get(s.libraryGameId) as LibraryGame, artOf),
         ),
+      undatedSeconds: seconds(parts.undated.map((u) => u.s)),
     };
   }
 
@@ -460,7 +493,12 @@ export class StatsService {
       this.chartSessions(userId, from, to, tz),
       this.unknownByDay(userId, from, to, tz),
     ]);
-    return this.dense(splitIntoDays(data.sessions, tz), from, to, unknown);
+    return this.dense(
+      splitIntoDays(partitionSessions(data.sessions, tz).dated, tz),
+      from,
+      to,
+      unknown,
+    );
   }
 
   async period(
@@ -475,16 +513,14 @@ export class StatsService {
     ]);
     const artOf = await this.artIndex(data.games.values());
     const primary = this.primaryIds(data.games.values());
-    // Only sessions with a slice inside the range count towards the per-game stats.
-    const inRange = data.sessions.filter((s) =>
-      [...splitIntoDays([s], tz).keys()].some((d) => d >= q.from && d <= q.to),
-    );
-    const perGame = this.groupDays(
-      this.groups(inRange, data.games),
+    // Only sessions counted in the range (see rangeGroups) count towards the per-game stats.
+    const perGame = this.rangeGroups(
+      partitionSessions(data.sessions, tz),
+      data.games,
       q.from,
       q.to,
       tz,
-    ).filter((x) => x.slices.size > 0);
+    );
     const total = new Map<string, DaySlice>();
     const dayGames: Period['dayGames'] = [];
     for (const x of perGame)
@@ -518,6 +554,9 @@ export class StatsService {
         .sort((a, b) => b.seconds - a.seconds),
       dayGames: dayGames.sort((a, b) =>
         a.date === b.date ? b.seconds - a.seconds : a.date < b.date ? -1 : 1,
+      ),
+      undatedSeconds: seconds(
+        perGame.map((x) => ({ seconds: x.undatedSeconds })),
       ),
     };
   }

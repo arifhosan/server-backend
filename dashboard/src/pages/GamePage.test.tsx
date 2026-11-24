@@ -33,6 +33,7 @@ const detail: GameDetail = {
     { imageUrl: null, hasIcon: false, id: 1, libraryGameId: 7, title: 'Cyberpunk 2077', platform: 'steam', source: 'tracker', deviceId: 5, startedAt: '2026-11-23T18:40:00Z', endedAt: '2026-11-23T21:55:00Z', seconds: 11700 },
     { imageUrl: null, hasIcon: false, id: 2, libraryGameId: 8, title: 'Cyberpunk 2077', platform: 'ps5', source: 'psn', deviceId: null, startedAt: '2026-11-20T09:00:00Z', endedAt: '2026-11-20T10:00:00Z', seconds: 3600 },
   ] satisfies SessionRow[],
+  undatedSeconds: 0,
 };
 
 function setup(status = 200, game: GameDetail = detail) {

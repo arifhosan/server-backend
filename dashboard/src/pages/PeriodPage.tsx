@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { ErrorState } from '../components/ErrorState';
 import { Spinner } from '../components/Spinner';
 import { StackedDayChart, groupGames, OTHER } from '../components/StackedDayChart';
+import { UndatedNote } from '../components/UndatedNote';
 import { addDays, daysBetween, fillDays, monthRange, todayIn, weekRange } from '../lib/dates';
 import { formatDuration } from '../lib/format';
 import { useApi } from '../lib/useApi';
@@ -92,7 +93,7 @@ export function PeriodPage() {
   const { data, error: loadError, loading, reload } = useApi<Period>(shown && `/games/period?from=${shown.from}&to=${shown.to}`);
   // Typing in a date input must not add a history entry per edit; presets may.
   const set = (r: Range, replace = false) => setParams({ from: r.from, to: r.to }, { replace });
-  const total = data?.days.reduce((s, d) => s + d.seconds, 0) ?? 0;
+  const total = (data?.days.reduce((s, d) => s + d.seconds, 0) ?? 0) + (data?.undatedSeconds ?? 0);
   const gameTotal = data?.games.reduce((s, g) => s + g.seconds, 0) ?? 0; // Share is of the games listed, so it never exceeds 100%
   const sessions = data?.games.reduce((s, g) => s + g.sessionCount, 0) ?? 0;
   const colors = new Map(data ? groupGames(data.games, data.dayGames).series.map((s) => [s.key, s.color]) : []);
@@ -144,6 +145,7 @@ export function PeriodPage() {
               <h2>Per day, by game</h2>
             </div>
             <StackedDayChart days={fillDays(data.days, shown.from, shown.to)} games={data.games} dayGames={data.dayGames} />
+            <UndatedNote seconds={data.undatedSeconds} />
           </Card>
           <div className="period-split">
             <Card label="Per game">

@@ -204,7 +204,24 @@ deltas into sessions whose window is (previous successful sync, this sync).
 **Windows longer than a day** (sync outage, the old ~24 h Exophase windows): a
 session is split evenly across the calendar days it spans when charting, and
 those days are flagged "estimated". Days with no successful run for a source
-are flagged "unknown" for that source, never shown as zero.
+are flagged "unknown" for that source, never shown as zero. Days after today
+are never flagged.
+
+**PSN/Steam noise and undated sessions** (one rule, `stats/undated.ts`, used by
+every stats read: overview, period, calendar, session list, game page, library
+session sums):
+- Noise: a `psn`/`steam` session under 5 min is hidden everywhere (totals,
+  charts, lists, session counts). The sync repair also deletes old ones.
+- Undated: a `psn`/`steam` session whose window spans more than one local day
+  (user time zone). It sits on no day (no bar, no `dayGames`, no game-page daily
+  point, not in "today"). A range total (this/last week, 30 days, period games,
+  session counts, top games) counts it only when its whole window lies inside
+  the range; otherwise not at all, no partial share.
+- Dated `psn`/`steam` sessions (one local day) sit on that day; tracker sessions
+  keep the day split across midnight; `import` is unchanged.
+- Overview, period and game responses carry `undatedSeconds`: counted in the
+  total but in no bar, so bars + `undatedSeconds` = total. The dashboard notes it
+  under the chart ("+ 11h 48m from PSN/Steam with no exact day").
 
 ### 6.4 Device tokens
 
@@ -475,7 +492,9 @@ Each step ships on its own; Grafana keeps working until step 6.
 ## 11. Calls made during review (check these)
 
 - Library totals use the platform's own number where one exists (6.3).
-- Multi-day windows are spread evenly and flagged "estimated" (6.3).
+- Multi-day windows are spread evenly and flagged "estimated" (6.3), except
+  PSN/Steam windows over several local days: those are undated and count only in
+  ranges that hold the whole window (6.3).
 - Steam dedup subtracts tracker time instead of checking overlap (6.6).
 - Legacy rows are matched to platform titles by normalised title (6.6, 6.9).
 - `game_old` imported as non-counting `import` sessions; `playtime` kept only

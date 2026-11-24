@@ -70,6 +70,8 @@ export interface Overview {
   lastWeek: number;
   last30Days: DayPoint[];
   topGames30d: TopGame[];
+  /** Counted in the 30-day total but on no day of last30Days. */
+  undatedSeconds: number;
   health: {
     connections: PublicConnection[];
     devices: { id: number; name: string; lastSeenAt: string | null }[];
@@ -100,6 +102,8 @@ export interface LibraryEntry extends GameArt {
 export interface GameDetail extends LibraryEntry {
   daily: DayPoint[];
   sessions: SessionRow[];
+  /** PSN/Steam play with no exact day: in no daily point. */
+  undatedSeconds: number;
 }
 
 export interface Period {
@@ -111,4 +115,6 @@ export interface Period {
     lastPlayedAt: string;
   })[];
   dayGames: { date: string; titleKey: string; seconds: number }[];
+  /** In the games' totals but in no day bar: days + undatedSeconds = the total. */
+  undatedSeconds: number;
 }

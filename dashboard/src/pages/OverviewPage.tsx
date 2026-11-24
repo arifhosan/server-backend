@@ -11,6 +11,7 @@ import { NowPlayingCard, useNowPlaying } from '../components/NowPlayingCard';
 import { Spinner } from '../components/Spinner';
 import { StatCard } from '../components/StatCard';
 import { TopGames } from '../components/TopGames';
+import { UndatedNote } from '../components/UndatedNote';
 import { ago, daysUntil, fillDays, monthRange, todayIn, weekRange } from '../lib/dates';
 import { formatDuration } from '../lib/format';
 import { useApi } from '../lib/useApi';
@@ -85,7 +86,10 @@ function ChartCard({ today }: { today: string }) {
       ) : loading || !data ? (
         <Spinner />
       ) : (
-        <DayBarChart days={fillDays(data.days, from, to)} futureAfter={today} labelEvery={range === 'month' ? 5 : undefined} />
+        <>
+          <DayBarChart days={fillDays(data.days, from, to)} futureAfter={today} labelEvery={range === 'month' ? 5 : undefined} />
+          <UndatedNote seconds={data.undatedSeconds} />
+        </>
       )}
     </Card>
   );
@@ -110,7 +114,7 @@ export function OverviewPage() {
   }
 
   const diff = o.thisWeek - o.lastWeek;
-  const month = o.last30Days.reduce((s, d) => s + d.seconds, 0);
+  const month = o.last30Days.reduce((s, d) => s + d.seconds, 0) + o.undatedSeconds;
   const unknownDays = o.last30Days.filter((d) => d.unknownSources.length > 0).length;
 
   return (
@@ -137,6 +141,7 @@ export function OverviewPage() {
           </div>
         </StatCard>
         <StatCard label="Last 30 days" value={formatDuration(month)}>
+          <UndatedNote seconds={o.undatedSeconds} />
           {unknownDays > 0 && (
             <div className="muted">
               {unknownDays} day{unknownDays === 1 ? '' : 's'} unknown

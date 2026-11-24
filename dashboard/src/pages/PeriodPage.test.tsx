@@ -17,7 +17,7 @@ function Where() {
   const l = useLocation();
   return <output data-testid="where" data-nav={useNavigationType()}>{l.search}</output>;
 }
-function renderPage(url: string, period: Period = { days: [], games: [], dayGames: [] }) {
+function renderPage(url: string, period: Period = { days: [], games: [], dayGames: [], undatedSeconds: 0 }) {
   const fetchMock = vi.fn(async (u: string) => (u.startsWith('/api/games/period') ? reply(period) : reply([])));
   vi.stubGlobal('fetch', fetchMock);
   render(
@@ -92,6 +92,7 @@ describe('PeriodPage', () => {
       days: [{ date: '2026-11-02', seconds: 3900, estimated: false, unknownSources: [] }],
       games: [game(1, 3000), game(2, 900)],
       dayGames: [],
+      undatedSeconds: 0,
     };
     const session = { id: 1, libraryGameId: 99, titleKey: 'g2', title: 'Game 2 (PS5)', platform: 'ps5', source: 'psn', deviceId: null, startedAt: '2026-11-02T10:00:00Z', endedAt: '2026-11-02T10:15:00Z', seconds: 900, imageUrl: null, hasIcon: false };
     vi.stubGlobal('fetch', vi.fn(async (u: string) => reply(u.startsWith('/api/games/period') ? period : [session])));
@@ -109,6 +110,7 @@ describe('PeriodPage', () => {
       days: [{ date: '2026-11-02', seconds: 1000, estimated: false, unknownSources: [] }],
       games: [game(1, 1500), game(2, 500)],
       dayGames: [],
+      undatedSeconds: 0,
     };
     renderPage('/period?from=2026-11-01&to=2026-11-07', period);
     expect(await screen.findByText('75%')).toBeTruthy();
@@ -120,10 +122,24 @@ describe('PeriodPage', () => {
       days: [{ date: '2026-11-02', seconds: 3900, estimated: false, unknownSources: [] }],
       games: [game(1, 3900)],
       dayGames: [{ date: '2026-11-02', titleKey: 'g1', seconds: 3900 }],
+      undatedSeconds: 0,
     };
     renderPage('/period?from=2026-11-01&to=2026-11-07', period);
     expect(await screen.findByText('Per game')).toBeTruthy();
     expect(screen.getAllByText('1h 05m').length).toBeGreaterThan(0);
     expect(screen.getByText('100%')).toBeTruthy();
+    expect(screen.queryByText(/with no exact day/)).toBeNull();
+  });
+
+  it('adds undated PSN/Steam play to the total and notes it under the chart', async () => {
+    const period: Period = {
+      days: [{ date: '2026-11-02', seconds: 3600, estimated: false, unknownSources: [] }],
+      games: [game(1, 3600 + 42480)],
+      dayGames: [{ date: '2026-11-02', titleKey: 'g1', seconds: 3600 }],
+      undatedSeconds: 42480, // 11h 48m
+    };
+    renderPage('/period?from=2026-11-01&to=2026-11-30', period);
+    expect(await screen.findByText('+ 11h 48m from PSN/Steam with no exact day')).toBeTruthy();
+    expect(screen.getAllByText('12h 48m').length).toBeGreaterThan(0); // Total = bars + undated
   });
 });

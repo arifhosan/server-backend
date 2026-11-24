@@ -9,7 +9,7 @@ const auth = { user: ME, login: vi.fn(), register: vi.fn(), logout: vi.fn() };
 const reply = (body: unknown) => new Response(JSON.stringify(body));
 
 const overview = (o: Partial<Overview> = {}): Overview => ({
-  nowPlaying: [], today: 0, thisWeek: 0, lastWeek: 0, last30Days: [], topGames30d: [],
+  nowPlaying: [], today: 0, thisWeek: 0, lastWeek: 0, last30Days: [], topGames30d: [], undatedSeconds: 0,
   health: { connections: [], devices: [] }, ...o,
 });
 

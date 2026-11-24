@@ -186,6 +186,15 @@ fire once; before any connection exists it has nothing to do.
 
 The dry-run report shows the would-be state (counts and `inserted` as if committed); the transaction is rolled back.
 
+### Stats: noise and undated PSN/Steam play
+
+Every stats read applies `stats/undated.ts`: `psn`/`steam` sessions under 5 min
+are hidden; those whose window spans several local days are "undated". An
+undated session is on no day and counts in a range's totals only when its
+whole window lies inside the range. Overview, period and game responses carry
+`undatedSeconds` (in the totals, in no bar); the dashboard shows it as a muted
+note under the chart.
+
 ### Library audit (read-only)
 
 Every Steam/PSN sync first repairs the user's library inside its transaction
