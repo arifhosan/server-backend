@@ -188,14 +188,39 @@ describe('PsnClient', () => {
     );
   });
 
-  it('a throwing refresh-token exchange is SecretExpiredError', async () => {
+  const staleAccess = () =>
+    secret({ accessExpiresAt: new Date(Date.now() - 1).toISOString() });
+
+  it('falls back to the NPSSO when the refresh throws or returns empty tokens', async () => {
+    mNpsso.mockResolvedValue('code');
+    mCode.mockResolvedValue(tokens('a3', 'r3'));
+    for (const fail of [
+      () => mRefresh.mockRejectedValueOnce(new Error('x')),
+      () => mRefresh.mockResolvedValueOnce({ accessToken: '' } as never),
+    ]) {
+      fail();
+      const r = await client.fetchTitles(conn, staleAccess());
+      expect((JSON.parse(r.secret!) as PsnSecret).refreshToken).toBe('r3');
+    }
+    expect(mNpsso).toHaveBeenCalledTimes(2);
+  });
+
+  it('is SecretExpiredError when the refresh and the NPSSO both fail', async () => {
     mRefresh.mockRejectedValue(new Error('x'));
-    await expect(
-      client.fetchTitles(
-        conn,
-        secret({ accessExpiresAt: new Date(Date.now() - 1).toISOString() }),
-      ),
-    ).rejects.toThrow(SecretExpiredError);
+    mNpsso.mockRejectedValue(new Error('y'));
+    await expect(client.fetchTitles(conn, staleAccess())).rejects.toThrow(
+      SecretExpiredError,
+    );
+  });
+
+  it('a corrupt expiry date forces renewal', async () => {
+    mNpsso.mockResolvedValue('code');
+    mCode.mockResolvedValue(tokens());
+    await client.fetchTitles(conn, secret({ refreshExpiresAt: 'garbage' }));
+    expect(mNpsso).toHaveBeenCalledTimes(1);
+    mRefresh.mockResolvedValue(tokens('a2', 'r2'));
+    await client.fetchTitles(conn, secret({ accessExpiresAt: 'garbage' }));
+    expect(mRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('pages through all titles', async () => {

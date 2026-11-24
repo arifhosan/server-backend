@@ -138,16 +138,17 @@ export class PsnClient implements PlatformClient {
 
     const now = Date.now();
     let refreshed = false;
-    if (Date.parse(s.refreshExpiresAt) < now + 3 * DAY_MS) {
+    // `!(x >= y)` so a corrupt (NaN) date forces renewal instead of skipping it.
+    if (!(Date.parse(s.refreshExpiresAt) >= now + 3 * DAY_MS)) {
       s = buildSecret(s.npsso, s.npssoExpiresAt, await fromNpsso(s.npsso), now);
       refreshed = true;
-    } else if (Date.parse(s.accessExpiresAt) < now + 60_000) {
-      s = buildSecret(
-        s.npsso,
-        s.npssoExpiresAt,
-        await exchange(() => exchangeRefreshTokenForAuthTokens(s.refreshToken)),
-        now,
-      );
+    } else if (!(Date.parse(s.accessExpiresAt) >= now + 60_000)) {
+      // Only a rejected NPSSO needs the user: if the refresh fails, retry once from it.
+      const { npsso, npssoExpiresAt, refreshToken } = s;
+      const tokens = await exchange(() =>
+        exchangeRefreshTokenForAuthTokens(refreshToken),
+      ).catch(() => fromNpsso(npsso));
+      s = buildSecret(npsso, npssoExpiresAt, tokens, now);
       refreshed = true;
     }
 
