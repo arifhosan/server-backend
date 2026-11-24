@@ -15,6 +15,8 @@ import { SyncRun } from './entities/sync-run.entity';
 import { GAMES_SECRET_KEY, SYNC_CLIENTS } from './games.constants';
 import { LegacyImportService } from './legacy/legacy-import.service';
 import { LibraryService } from './library/library.service';
+import { StatsController } from './stats/stats.controller';
+import { StatsService } from './stats/stats.service';
 import { TrackerController } from './tracker/tracker.controller';
 import { TrackerService } from './tracker/tracker.service';
 import { PsnClient } from './sync/psn.client';
@@ -33,7 +35,12 @@ import { loadSecretKey } from './utils/secret-box';
       PlaySession,
     ]),
   ],
-  controllers: [DevicesController, TrackerController, ConnectionsController],
+  controllers: [
+    DevicesController,
+    TrackerController,
+    ConnectionsController,
+    StatsController,
+  ],
   providers: [
     DevicesService,
     ConnectionsService,
@@ -41,6 +48,7 @@ import { loadSecretKey } from './utils/secret-box';
     LegacyImportService,
     LibraryService,
     TrackerService,
+    StatsService,
     SyncService,
     SteamClient,
     PsnClient,

@@ -1,0 +1,70 @@
+import { PublicConnection } from '../connections/connections.service';
+import { Platform, Provider } from '../games.types';
+import { NowPlaying } from '../tracker/tracker.service';
+
+export interface DayPoint {
+  date: string;
+  seconds: number;
+  estimated: boolean;
+  unknownSources: Provider[];
+}
+
+/** titleKey is the group key: the real titleKey, or `#<libraryGameId>` when a title has none (Ruling R8). */
+export interface TopGame {
+  titleKey: string;
+  title: string;
+  seconds: number;
+}
+
+export interface Overview {
+  nowPlaying: NowPlaying[];
+  today: number;
+  thisWeek: number;
+  lastWeek: number;
+  last30Days: DayPoint[];
+  topGames30d: TopGame[];
+  health: {
+    connections: PublicConnection[];
+    devices: { id: number; name: string; lastSeenAt: Date | null }[];
+  };
+}
+
+export interface SessionRow {
+  id: number;
+  libraryGameId: number;
+  title: string;
+  platform: Platform;
+  source: string;
+  deviceId: number | null;
+  startedAt: Date;
+  endedAt: Date;
+  seconds: number;
+}
+
+export interface LibraryEntry {
+  titleKey: string;
+  title: string;
+  totalSeconds: number;
+  lastPlayedAt: Date | null;
+  platforms: {
+    platform: Platform;
+    libraryGameId: number;
+    totalSeconds: number;
+  }[];
+}
+
+export interface GameDetail extends LibraryEntry {
+  daily: DayPoint[];
+  sessions: SessionRow[];
+}
+
+export interface Period {
+  days: DayPoint[];
+  games: (TopGame & {
+    platforms: Platform[];
+    sessionCount: number;
+    firstPlayedAt: Date;
+    lastPlayedAt: Date;
+  })[];
+  dayGames: { date: string; titleKey: string; seconds: number }[];
+}
