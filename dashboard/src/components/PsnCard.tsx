@@ -5,6 +5,13 @@ import { useAuth } from '../auth/AuthContext';
 import { ago, daysUntil } from '../lib/dates';
 import { ActionError, Chip, useAction } from './ConnectionParts';
 
+/** Accepts Sony's whole `{"npsso":"..."}` line, a quoted value or the bare value. */
+export function extractNpsso(raw: string): string {
+  const t = raw.trim();
+  if (t.includes('"npsso"')) return /"npsso"\s*:\s*"([^"]+)"/.exec(t)?.[1] ?? t;
+  return t.replace(/^["'\s]+|["'\s]+$/g, '');
+}
+
 type Tone = 'ok' | 'warn' | 'bad' | 'off';
 
 function chipFor(conn: PublicConnection, expired: boolean, warn: boolean): { tone: Tone; text: string } {
@@ -21,6 +28,7 @@ function chipFor(conn: PublicConnection, expired: boolean, warn: boolean): { ton
 export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined; onChange: () => void }) {
   const [npsso, setNpsso] = useState('');
   const [confirm, setConfirm] = useState(false);
+  const [bad, setBad] = useState(false);
   const { error, busy, run } = useAction();
   const timeZone = useAuth().user?.timezone ?? 'UTC';
 
@@ -30,7 +38,13 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (await run(() => api('/games/connections/psn', json('PUT', { npsso: npsso.trim() })))) {
+    const token = extractNpsso(npsso);
+    if (!/^[A-Za-z0-9]{64}$/.test(token)) {
+      setBad(true);
+      return;
+    }
+    setBad(false);
+    if (await run(() => api('/games/connections/psn', json('PUT', { npsso: token })))) {
       setNpsso('');
       onChange();
     }
@@ -67,17 +81,23 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
       {conn?.lastError && <div className="last-error">{conn.lastError}</div>}
       <ol className="steps">
         <li>
-          Sign in at <a href="https://www.playstation.com">playstation.com</a>.
+          Sign in at <a href="https://www.playstation.com" target="_blank" rel="noopener noreferrer">playstation.com</a>.
         </li>
         <li>
-          Open <a href="https://ca.account.sony.com/api/v1/ssocookie">Sony's token page</a> and copy the value after "npsso".
+          Open <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener noreferrer">Sony's token page</a> and copy the value after "npsso".
         </li>
         <li>Paste it here.</li>
       </ol>
       <form className="row-end" onSubmit={save}>
         <label className="lbl grow">
           NPSSO token
-          <input className="field" type="password" autoComplete="off" placeholder="64 characters" value={npsso} onChange={(e) => setNpsso(e.target.value)} required />
+          <input className="field" type="password" autoComplete="off" placeholder="64 characters" value={npsso} onChange={(e) => setNpsso(e.target.value)} aria-describedby="npsso-hint" aria-invalid={bad} required />
+          <span id="npsso-hint" className="muted small">Paste the whole line from Sony's page, or just the 64-character value</span>
+          {bad && (
+            <span role="alert" className="action-error">
+              That doesn't look like an NPSSO token. Copy only the 64 characters after "npsso":
+            </span>
+          )}
         </label>
         <button className="btn primary" type="submit" disabled={busy || !npsso.trim()}>
           {conn ? 'Renew' : 'Connect PlayStation'}

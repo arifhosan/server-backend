@@ -9,7 +9,7 @@ import { SteamCard } from '../components/SteamCard';
 import { useApi } from '../lib/useApi';
 import '../styles/settings.css';
 
-const DOWNLOAD = 'https://github.com/ArifHosan/server-backend/releases/latest/download/GameTracker-setup.exe';
+const DOWNLOAD = '/download/GameTracker-setup.exe';
 
 export function SettingsPage() {
   const devices = useApi<PublicDevice[]>('/games/devices');
@@ -29,7 +29,7 @@ export function SettingsPage() {
               <div className="strong big">Track PC games with the Game Tracker app</div>
               <div className="muted">Windows 10/11 · runs in the tray · sends play sessions as they happen</div>
             </div>
-            <a className="btn primary" href={DOWNLOAD}>
+            <a className="btn primary" href={DOWNLOAD} download>
               Download for Windows
             </a>
           </div>
