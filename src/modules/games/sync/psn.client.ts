@@ -91,6 +91,15 @@ async function exchange(
   return t;
 }
 
+export class PsnPrivacyError extends Error {
+  constructor() {
+    super(
+      'PSN accepted the sign-in but refused to list games. Make sure your PlayStation privacy settings allow your game list ("Gaming history") to be seen.',
+    );
+    this.name = 'PsnPrivacyError';
+  }
+}
+
 const fromNpsso = (npsso: string) =>
   exchange(async () =>
     exchangeAccessCodeForAuthTokens(await exchangeNpssoForAccessCode(npsso)),
@@ -126,25 +135,79 @@ export function toObserved(t: PlayedTitle): ObservedTitle | null {
 export class PsnClient implements PlatformClient {
   private readonly logger = new Logger(PsnClient.name);
 
+  /** One scrubbed log line: no token-looking strings, 200 chars max. */
+  private describe(e: unknown): string {
+    const cls = e instanceof Error ? e.constructor.name : typeof e;
+    const msg = e instanceof Error ? e.message : String(e);
+    return `${cls}: ${msg}`
+      .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')
+      .slice(0, 200);
+  }
+
   async connect(
     npsso: string,
   ): Promise<{ secret: PsnSecret; accountId: string; onlineId: string }> {
     const now = Date.now();
-    const tokens = await fromNpsso(npsso);
-    const secret = buildSecret(
-      npsso,
-      new Date(now + 60 * DAY_MS).toISOString(),
-      tokens,
-      now,
+    const step = async <T>(
+      name: string,
+      run: () => Promise<T | undefined>,
+    ): Promise<T> => {
+      try {
+        const r = await run();
+        if (!r) throw new Error('empty response');
+        return r;
+      } catch (e) {
+        this.logger.error(`PSN connect failed at ${name}: ${this.describe(e)}`);
+        throw new SecretExpiredError(EXPIRED_MSG);
+      }
+    };
+    const code = await step('exchange-code', () =>
+      exchangeNpssoForAccessCode(npsso),
     );
+    const tokens = await step('exchange-tokens', async () => {
+      const t = await exchangeAccessCodeForAuthTokens(code);
+      return t?.accessToken && t.refreshToken ? t : undefined;
+    });
+    const auth = { accessToken: tokens.accessToken };
+
     try {
-      const auth = { accessToken: tokens.accessToken };
-      const { onlineId } = await getProfileFromAccountId(auth, 'me');
-      const { profile } = await getProfileFromUserName(auth, onlineId);
-      return { secret, accountId: profile.accountId, onlineId };
-    } catch {
-      throw new SyncFailedError('Could not read the PSN profile.');
+      await getUserPlayedGames(auth, 'me', { limit: 1, offset: 0 });
+    } catch (e) {
+      this.logger.error(
+        `PSN connect failed at played-games: ${this.describe(e)}`,
+      );
+      if (
+        /40[13]|forbidden|privacy|permission|not authori[sz]ed|access denied/i.test(
+          e instanceof Error ? e.message : '',
+        )
+      )
+        throw new PsnPrivacyError();
+      throw new SecretExpiredError(EXPIRED_MSG);
     }
+
+    // Best effort: the sync only needs the tokens.
+    let onlineId = 'PlayStation';
+    let accountId = 'me';
+    try {
+      const p = await getProfileFromAccountId(auth, 'me');
+      if (p?.onlineId) {
+        onlineId = p.onlineId;
+        const u = await getProfileFromUserName(auth, p.onlineId);
+        if (u?.profile?.accountId) accountId = u.profile.accountId;
+      }
+    } catch (e) {
+      this.logger.warn(`PSN profile lookup failed: ${this.describe(e)}`);
+    }
+    return {
+      secret: buildSecret(
+        npsso,
+        new Date(now + 60 * DAY_MS).toISOString(),
+        tokens,
+        now,
+      ),
+      accountId,
+      onlineId,
+    };
   }
 
   async fetchTitles(

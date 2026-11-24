@@ -11,7 +11,7 @@ import { Connection } from '../entities/connection.entity';
 import { SyncRun } from '../entities/sync-run.entity';
 import { GAMES_SECRET_KEY } from '../games.constants';
 import { ConnectionStatus, Provider } from '../games.types';
-import { PsnClient } from '../sync/psn.client';
+import { PsnClient, PsnPrivacyError } from '../sync/psn.client';
 import { SyncFailedError } from '../sync/platform-client';
 import { SteamClient } from '../sync/steam.client';
 import { SyncService } from '../sync/sync.service';
@@ -91,8 +91,10 @@ export class ConnectionsService {
     let res: Awaited<ReturnType<PsnClient['connect']>>;
     try {
       res = await this.psn.connect(npsso);
-    } catch {
-      // By design every connect failure (bad token, PSN down) is this one 400.
+    } catch (e) {
+      if (e instanceof PsnPrivacyError)
+        throw new BadRequestException(e.message);
+      // By design every other connect failure (bad token, PSN down) is this one 400.
       throw new BadRequestException(
         'PSN rejected this token. Copy a fresh one and try again.',
       );
