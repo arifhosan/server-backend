@@ -116,13 +116,14 @@ pub enum Flush {
     Revoked,
 }
 
-/// A refusal that retrying cannot fix (bad data, body too large): not auth, timeout or rate limit.
+/// A refusal caused by the payload itself (400 bad data, 413 too large, 422 invalid): retrying cannot fix it.
+/// Everything else (404 wrong URL, 403 proxy, 5xx, ...) is a server or setup problem: the queue is kept.
 fn is_permanent(code: u16) -> bool {
-    (400..500).contains(&code) && ![401, 408, 429].contains(&code)
+    [400, 413, 422].contains(&code)
 }
 
 /// Send the queue oldest first in batches of 100, at most 10 batches per call. A batch is acked only after the server
-/// accepted it, or refused it for good (4xx other than 401/408/429): that batch is dropped and counted in `dropped`,
+/// accepted it, or refused it for good (400, 413 or 422): that batch is dropped and counted in `dropped`,
 /// so one bad entry cannot jam the queue forever.
 pub fn flush(q: &mut Queue, api: &Api, token: &str, now: DateTime<Utc>, dropped: &mut u32) -> Flush {
     let mut sent = 0;
@@ -390,8 +391,22 @@ mod tests {
     }
 
     #[test]
-    fn retryable_4xx_keeps_the_queue() {
-        for code in [408, 429] {
+    fn too_large_and_invalid_drop_the_batch() {
+        for code in [413, 422] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut q = Queue::open(dir.path().join("q.jsonl"));
+            q.push(&hbs(3, now())).unwrap();
+            let mut s = mockito::Server::new();
+            s.mock("POST", "/games/tracker/heartbeats").with_status(code).create();
+            let mut dropped = 0;
+            assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut dropped), Flush::Idle);
+            assert_eq!((dropped, q.len()), (3, 0));
+        }
+    }
+
+    #[test]
+    fn non_payload_errors_keep_the_queue() {
+        for code in [403, 404, 408, 429] {
             let dir = tempfile::tempdir().unwrap();
             let mut q = Queue::open(dir.path().join("q.jsonl"));
             q.push(&hbs(3, now())).unwrap();
