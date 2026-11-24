@@ -36,7 +36,7 @@ export class LibraryGame {
   @Column({ type: 'varchar', length: 512, nullable: true })
   imageUrl: string | null;
 
-  /** Last Steam store art lookup that found nothing; retried after 30 days. */
+  /** Last Steam store art lookup that found nothing (retried after 30 days); a failed request is back-dated to retry after 1 day. */
   @Column({ type: 'datetime', precision: 6, nullable: true })
   artCheckedAt: Date | null;
 

@@ -229,6 +229,9 @@ only from the audit CLI, after review:
    fold with its rule, the unmatched legacy rows, media apps and cross-gen pairs
    to drop, relabels, hidden noise and re-windowed sessions, and the title groups
    whose totals differ.
-2. Apply the same plan in one transaction (all or nothing):
+2. Back up first; folds delete the legacy rows and cannot be undone:
+   `mysqldump --single-transaction --skip-lock-tables --set-gtid-purged=OFF <db> library_game play_session game_icon > games-data.sql`
+3. Apply the same plan in one transaction (all or nothing), right after the dry
+   run (it re-plans from current data) and away from the hourly sync at :05:
    `docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id> --apply`
    It prints the same report with `"applied": true`.
