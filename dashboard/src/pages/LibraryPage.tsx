@@ -8,7 +8,7 @@ import { GameArt } from '../components/GameArt';
 import { PlatformChip } from '../components/PlatformChip';
 import { SortableTable, type Column } from '../components/SortableTable';
 import { Spinner } from '../components/Spinner';
-import { addDays, dayOf, relativeDay, todayIn } from '../lib/days';
+import { addDays, dayOf, relativeDay, todayIn } from '../lib/dates';
 import { formatDuration } from '../lib/format';
 import {
   defaultDir,
@@ -22,7 +22,15 @@ import {
   type SortKey,
 } from '../lib/sort';
 import { useApi } from '../lib/useApi';
+import { useMediaQuery } from '../lib/useMediaQuery';
 import '../styles/library.css';
+
+const SORTS: [SortKey, string][] = [
+  ['total', 'Total'],
+  ['recent', 'Last 30 days'],
+  ['last', 'Last played'],
+  ['title', 'Title'],
+];
 
 export function LibraryPage() {
   const tz = useAuth().user?.timezone ?? 'UTC';
@@ -33,6 +41,7 @@ export function LibraryPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: Dir }>({ key: 'total', dir: 'desc' });
   const [filter, setFilter] = useState<PlatformFilter>('all');
   const [query, setQuery] = useState('');
+  const compact = useMediaQuery('(max-width: 719px)');
 
   const all = useMemo(
     () =>
@@ -50,6 +59,12 @@ export function LibraryPage() {
   const platformCount = new Set(all.flatMap((r) => r.platforms.map((p) => p.platform))).size;
   const hours = Math.round(all.reduce((s, r) => s + r.totalSeconds, 0) / 3600);
 
+  const lastPlayed = (r: LibraryRow) => (r.lastPlayedAt ? relativeDay(dayOf(r.lastPlayedAt, tz), today) : 'Never');
+  const onSort = (key: string) => {
+    const k = key as SortKey;
+    setSort((s) => (s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: defaultDir(k) }));
+  };
+
   const columns: Column<LibraryRow>[] = [
     {
       key: 'title',
@@ -57,7 +72,7 @@ export function LibraryPage() {
       sortable: true,
       cell: (r) => (
         <div className="game-cell">
-          <GameArt imageUrl={r.imageUrl} hasIcon={r.hasIcon} libraryGameId={r.platforms[0].libraryGameId} title={r.title} />
+          <GameArt imageUrl={r.imageUrl} hasIcon={r.hasIcon} iconLibraryGameId={r.iconLibraryGameId} libraryGameId={r.platforms[0].libraryGameId} title={r.title} />
           <Link className="row-link" to={`/games/${r.platforms[0].libraryGameId}`} title={r.title}>
             {r.title}
           </Link>
@@ -88,7 +103,7 @@ export function LibraryPage() {
       label: 'Last played',
       numeric: true,
       sortable: true,
-      cell: (r) => (r.lastPlayedAt ? relativeDay(dayOf(r.lastPlayedAt, tz), today) : 'Never'),
+      cell: lastPlayed,
     },
   ];
 
@@ -115,8 +130,51 @@ export function LibraryPage() {
         ))}
       </div>
 
-      {shown.length === 0 ? (
+      {all.length === 0 ? (
+        <EmptyState title="Your library is empty">
+          Nothing has been tracked yet. <Link to="/settings">Install the tracker or connect Steam or PlayStation in Settings</Link>.
+        </EmptyState>
+      ) : shown.length === 0 ? (
         <EmptyState title="No games match">Try another platform or search.</EmptyState>
+      ) : compact ? (
+        <section aria-label="Games" className="lib-compact">
+          <div className="lib-sort">
+            <label>
+              Sort by
+              <select value={sort.key} onChange={(e) => setSort({ key: e.target.value as SortKey, dir: defaultDir(e.target.value as SortKey) })}>
+                {SORTS.map(([k, l]) => (
+                  <option key={k} value={k}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="btn" onClick={() => onSort(sort.key)}>
+              {sort.dir === 'asc' ? 'Ascending' : 'Descending'}
+            </button>
+          </div>
+          <ul className="lib-list">
+            {shown.map((r) => (
+              <li key={r.titleKey}>
+                <GameArt imageUrl={r.imageUrl} hasIcon={r.hasIcon} iconLibraryGameId={r.iconLibraryGameId} libraryGameId={r.platforms[0].libraryGameId} title={r.title} />
+                <div className="lib-main">
+                  <Link className="row-link" to={`/games/${r.platforms[0].libraryGameId}`} title={r.title}>
+                    {r.title}
+                  </Link>
+                  <div className="lib-sub">
+                    <span className="chips">
+                      {r.platforms.map((p) => (
+                        <PlatformChip key={p.libraryGameId} platform={p.platform} />
+                      ))}
+                    </span>
+                    <span>{lastPlayed(r)}</span>
+                  </div>
+                </div>
+                <b>{formatDuration(r.totalSeconds)}</b>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : (
         <SortableTable
           label="Games"
@@ -125,10 +183,7 @@ export function LibraryPage() {
           rowKey={(r) => r.titleKey}
           sortKey={sort.key}
           dir={sort.dir}
-          onSort={(key) => {
-            const k = key as SortKey;
-            setSort((s) => (s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: defaultDir(k) }));
-          }}
+          onSort={onSort}
         />
       )}
       <p className="page-note">

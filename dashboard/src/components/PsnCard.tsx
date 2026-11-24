@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api, json } from '../api/client';
 import type { PublicConnection } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
 import { ago, daysUntil } from '../lib/dates';
 import { ActionError, Chip, useAction } from './ConnectionParts';
 
@@ -21,6 +22,7 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
   const [npsso, setNpsso] = useState('');
   const [confirm, setConfirm] = useState(false);
   const { error, busy, run } = useAction();
+  const timeZone = useAuth().user?.timezone ?? 'UTC';
 
   const expired = !!conn && (conn.status === 'expired' || (!!conn.secretExpiresAt && daysUntil(conn.secretExpiresAt) === 0));
   const warn = expired || conn?.status === 'expiring';
@@ -33,8 +35,8 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
       onChange();
     }
   }
-  const act = async (fn: () => Promise<unknown>, on409?: string) => {
-    if (await run(fn, on409)) {
+  const act = async (fn: () => Promise<unknown>) => {
+    if (await run(fn)) {
       setConfirm(false);
       onChange();
     }
@@ -55,7 +57,11 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
         <div className="warn-text">
           {expired
             ? 'Your Sony sign-in token has expired. Renew it to resume syncing.'
-            : 'Sony requires a new sign-in token every 60 days. Renew it before it expires to keep syncing.'}
+            : `Sony requires a new sign-in token every 60 days. Renew it ${
+                conn?.secretExpiresAt
+                  ? `before ${new Intl.DateTimeFormat('en-US', { timeZone, month: 'short', day: 'numeric' }).format(new Date(conn.secretExpiresAt))}`
+                  : 'before it expires'
+              } to keep syncing.`}
         </div>
       )}
       {conn?.lastError && <div className="last-error">{conn.lastError}</div>}
@@ -83,7 +89,7 @@ export function PsnCard({ conn, onChange }: { conn: PublicConnection | undefined
             {conn.lastSyncAt ? `Last sync ${ago(conn.lastSyncAt)}` : 'Not synced yet'} · your token is stored encrypted and never shown again
           </div>
           <div className="row-end">
-            <button className="btn" type="button" disabled={busy} onClick={() => void act(() => api('/games/connections/psn/sync', json('POST')), 'A sync is already running')}>
+            <button className="btn" type="button" disabled={busy || conn.status === 'disabled'} onClick={() => void act(() => api('/games/connections/psn/sync', json('POST')))}>
               Sync now
             </button>
             {confirm ? (

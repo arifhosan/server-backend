@@ -101,6 +101,27 @@ describe('LibraryPage', () => {
     expect(bodyTitles()[0]).toBe('Game 0');
   });
 
+  it('shows a setup message with a Settings link when the library is empty', async () => {
+    setup([]);
+    expect(await screen.findByText('Your library is empty')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Settings/ }).getAttribute('href')).toBe('/settings');
+    expect(screen.queryByText('No games match')).toBeNull();
+  });
+
+  it('renders a compact list with total, platforms and last played on a phone', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: true, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    setup([entry(1, 'Hades', 7200), entry(2, 'Celeste', 3600, 'ps5')]);
+    const list = await screen.findByRole('list');
+    expect(screen.queryByRole('table')).toBeNull();
+    const first = within(list).getAllByRole('listitem')[0];
+    expect(within(first).getByText('Hades')).toBeTruthy();
+    expect(within(first).getByText('Steam')).toBeTruthy();
+    expect(within(first).getByText('2h 00m')).toBeTruthy();
+    expect(within(first).getByText(/ago|Today|Yesterday|month/)).toBeTruthy();
+    await userEvent.selectOptions(screen.getByLabelText('Sort by'), 'title');
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')[0].textContent).toContain('Celeste');
+  });
+
   it('shows an error when loading fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply({ message: 'boom' }, 500)));
     render(

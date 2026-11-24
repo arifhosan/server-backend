@@ -48,7 +48,7 @@ function Session({ g, timeZone }: { g: NowPlaying; timeZone: string }) {
   const clock = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit' }).format(started);
   return (
     <section className="now" aria-label="Now playing">
-      <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} libraryGameId={g.libraryGameId} title={g.title} size="lg" />
+      <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} iconLibraryGameId={g.iconLibraryGameId} libraryGameId={g.libraryGameId} title={g.title} size="lg" />
       <div className="now-info">
         <div className="now-badge">
           <span className="dot" aria-hidden="true" />

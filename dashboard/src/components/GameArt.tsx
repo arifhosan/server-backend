@@ -8,14 +8,15 @@ interface Props {
   imageUrl: string | null;
   hasIcon: boolean;
   libraryGameId: number;
+  iconLibraryGameId?: number | null;
   title: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 /** Cover image, else the game's icon, else an initials tile. A failed image falls back to the tile. */
-export function GameArt({ imageUrl, hasIcon, libraryGameId, title, size = 'md' }: Props) {
+export function GameArt({ imageUrl, hasIcon, libraryGameId, iconLibraryGameId, title, size = 'md' }: Props) {
   const [failed, setFailed] = useState(false);
-  const src = imageUrl ?? (hasIcon ? `/api/games/library/${libraryGameId}/icon` : null);
+  const src = imageUrl ?? (hasIcon ? `/api/games/library/${iconLibraryGameId ?? libraryGameId}/icon` : null);
   const cls = `art art-${size}`;
   if (src && !failed) return <img className={cls} src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
   const words = title.split(/\s+/).filter(Boolean);

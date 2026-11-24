@@ -49,3 +49,18 @@
 /* hero size for GameArt (base .art rules live in overview.css) */
 .art-xl { width: 368px; max-width: 100%; height: auto; aspect-ratio: 460 / 215; border-radius: 12px; }
 .art-xl.art-tile { font-size: 40px; }
+
+/* phone layout (< 720 px): replaces the table */
+.lib-compact { display: flex; flex-direction: column; gap: 12px; }
+.lib-sort { display: flex; align-items: flex-end; gap: 10px; }
+.lib-sort label { display: flex; flex-direction: column; gap: 6px; flex: 1; color: var(--muted); font-size: 13px; }
+.lib-sort select {
+  font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--field-border);
+  border-radius: 8px; padding: 0 12px; min-height: 44px;
+}
+.lib-list { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); }
+.lib-list li { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--card-border); }
+.lib-list li:first-child { border-top: 0; }
+.lib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lib-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: 12px; }
+.lib-list b { font-variant-numeric: tabular-nums; white-space: nowrap; }

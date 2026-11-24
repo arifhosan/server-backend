@@ -46,3 +46,28 @@ export function ago(iso: string, now: Date = new Date()): string {
 /** Whole days left until `iso` (rounded up), never below 0. */
 export const daysUntil = (iso: string, now: Date = new Date()) =>
   Math.max(0, Math.ceil((Date.parse(iso) - now.getTime()) / DAY));
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** YYYY-MM-DD of an instant in the user's timezone (never the browser's). */
+export const dayOf = (when: Date | string, timeZone: string) => todayIn(timeZone, new Date(when));
+
+export const addDays = (ymd: string, n: number) => fromUtc(toUtc(ymd) + n * DAY);
+
+export const daysBetween = (from: string, to: string) => Math.round((toUtc(to) - toUtc(from)) / DAY);
+
+/** "Nov 24" */
+export const shortDay = (ymd: string) => {
+  const d = new Date(toUtc(ymd));
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+};
+
+/** "Today", "Yesterday", "5 days ago", "3 months ago", both arguments are user-timezone days. */
+export function relativeDay(day: string, today: string): string {
+  const n = daysBetween(day, today);
+  if (n <= 0) return 'Today';
+  if (n === 1) return 'Yesterday';
+  if (n < 30) return `${n} days ago`;
+  const m = Math.round(n / 30);
+  return m === 1 ? '1 month ago' : `${m} months ago`;
+}

@@ -1,5 +1,5 @@
 import type { LibraryEntry, Platform } from '../api/types';
-import { fillDays, relativeDay } from './days';
+import { fillDays, relativeDay } from './dates';
 import { filterRows, sortRows, toRows } from './sort';
 
 const entry = (title: string, total: number, last: string | null, platforms: Platform[] = ['steam']): LibraryEntry => ({

@@ -107,14 +107,35 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Renew' })).toBeTruthy();
   });
 
-  it('says a sync is already running on 409', async () => {
+  it('shows any other 409 message verbatim', async () => {
     mock([], [conn()], (url, init) =>
       url === '/api/games/connections/steam/sync' && init?.method === 'POST' ? reply({ message: 'busy' }, 409) : undefined,
     );
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Sync now' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('busy');
+  });
+
+  it('turns the exact "Sync already running" 409 into friendly copy', async () => {
+    mock([], [conn()], (url, init) =>
+      url === '/api/games/connections/steam/sync' && init?.method === 'POST' ? reply({ message: 'Sync already running' }, 409) : undefined,
+    );
+    renderPage();
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Sync now' }));
     expect((await screen.findByRole('alert')).textContent).toBe('A sync is already running');
+  });
+
+  it('disables Sync now for a disabled connection', async () => {
+    mock([], [conn({ status: 'disabled' })]);
+    renderPage();
+    expect(((await screen.findByRole('button', { name: 'Sync now' })) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('tells the user when to renew the PSN token, in their timezone', async () => {
+    mock([], [conn({ provider: 'psn', status: 'expiring', secretExpiresAt: '2026-12-03T01:00:00Z' })]);
+    renderPage();
+    expect(await screen.findByText(/Renew it before Dec 3 to keep syncing\./)).toBeTruthy();
   });
 
   it('shows lastError verbatim and signs out', async () => {

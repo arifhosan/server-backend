@@ -123,11 +123,17 @@ export function OverviewPage() {
         </StatCard>
         <StatCard label="This week" value={formatDuration(o.thisWeek)}>
           <div className="muted">
-            <span className="delta">
-              {diff < 0 ? '−' : '+'}
-              {formatDuration(Math.abs(diff))}
-            </span>{' '}
-            vs last week ({formatDuration(o.lastWeek)})
+            {diff === 0 ? (
+              <>same as last week ({formatDuration(o.lastWeek)})</>
+            ) : (
+              <>
+                <span className="delta">
+                  {diff < 0 ? '−' : '+'}
+                  {formatDuration(Math.abs(diff))}
+                </span>{' '}
+                vs last week ({formatDuration(o.lastWeek)})
+              </>
+            )}
           </div>
         </StatCard>
         <StatCard label="Last 30 days" value={formatDuration(month)}>

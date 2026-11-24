@@ -9,7 +9,7 @@ import { GameDayChart } from '../components/GameDayChart';
 import { PlatformChip } from '../components/PlatformChip';
 import { RangeToggle } from '../components/RangeToggle';
 import { Spinner } from '../components/Spinner';
-import { addDays, dayOf, fillDays, relativeDay, shortDay, todayIn } from '../lib/days';
+import { addDays, dayOf, fillDays, relativeDay, shortDay, todayIn } from '../lib/dates';
 import { formatDuration } from '../lib/format';
 import { PLATFORM_LABEL } from '../lib/sort';
 import { useApi } from '../lib/useApi';
@@ -43,7 +43,8 @@ export function GamePage() {
 
   const chart = useMemo(() => {
     if (!g) return null;
-    const first = g.daily[0]?.date ?? today;
+    // A client clock behind the server must not put the first play after `today`.
+    const first = g.daily.reduce((m, d) => (d.date < m ? d.date : m), today);
     const from = range === 'all' ? first : addDays(today, 1 - Number(range));
     const days = fillDays(g.daily, from, today);
     const sum = days.reduce((s, d) => s + d.seconds, 0);
@@ -52,7 +53,7 @@ export function GamePage() {
     return { days, sum, best, label: `Daily playtime of ${g.title} ${span}, total ${formatDuration(sum)}` };
   }, [g, range, today]);
 
-  if (game.error?.status === 404) {
+  if (game.error?.status === 404 || game.error?.status === 400) {
     return (
       <div className="page">
         <EmptyState title="This game isn't in your library">
@@ -77,7 +78,7 @@ export function GamePage() {
       </Link>
 
       <section className="game-hero">
-        <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} libraryGameId={g.platforms[0]?.libraryGameId ?? 0} title={g.title} size="xl" />
+        <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} iconLibraryGameId={g.iconLibraryGameId} libraryGameId={g.platforms[0]?.libraryGameId ?? 0} title={g.title} size="xl" />
         <div className="game-hero-info">
           <h1>{g.title}</h1>
           <div className="chips">

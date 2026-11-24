@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { GameDetail, SessionRow } from '../api/types';
 import { AuthContext, type AuthValue } from '../auth/AuthContext';
-import { addDays, todayIn } from '../lib/days';
+import { addDays, todayIn } from '../lib/dates';
 import { GamePage } from './GamePage';
 
 const TZ = 'Europe/Berlin';
@@ -35,11 +35,11 @@ const detail: GameDetail = {
   ] satisfies SessionRow[],
 };
 
-function setup(status = 200) {
+function setup(status = 200, game: GameDetail = detail) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
-      if (url === '/api/games/library/7') return status === 200 ? reply(detail) : reply({ message: 'Not found' }, status);
+      if (url === '/api/games/library/7') return status === 200 ? reply(game) : reply({ message: 'Not found' }, status);
       if (url === '/api/games/devices') return reply([{ id: 5, name: 'DESKTOP-ARIF' }]);
       return reply({}, 404);
     }),
@@ -71,7 +71,7 @@ describe('GamePage', () => {
   it('fills the 30-day range from sparse points and states the key numbers', async () => {
     setup();
     const chart = await screen.findByRole('img', { name: /last 30 days/ });
-    expect(chart.querySelectorAll('.day-bar')).toHaveLength(30);
+    expect(chart.querySelectorAll('.chart-col')).toHaveLength(30);
     expect(chart.getAttribute('aria-label')).toMatch(/total 1h 30m/);
     expect(screen.getByText('Daily average').querySelector('strong')?.textContent).toBe('3m');
   });
@@ -80,9 +80,9 @@ describe('GamePage', () => {
     setup();
     await screen.findByRole('img', { name: /last 30 days/ });
     await userEvent.click(screen.getByRole('button', { name: '1 year' }));
-    expect(screen.getByRole('img', { name: /last 365 days/ }).querySelectorAll('.day-bar')).toHaveLength(365);
+    expect(screen.getByRole('img', { name: /last 365 days/ }).querySelectorAll('.chart-col')).toHaveLength(365);
     await userEvent.click(screen.getByRole('button', { name: 'All' }));
-    expect(screen.getByRole('img', { name: /since/ }).querySelectorAll('.day-bar')).toHaveLength(41);
+    expect(screen.getByRole('img', { name: /since/ }).querySelectorAll('.chart-col')).toHaveLength(41);
     expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -90,6 +90,25 @@ describe('GamePage', () => {
     setup();
     expect(await screen.findByText('DESKTOP-ARIF')).toBeTruthy();
     expect(screen.getByText('PlayStation sync')).toBeTruthy();
+  });
+
+  it('draws the hour axis and hatches unknown days like the Overview chart', async () => {
+    setup(200, { ...detail, daily: [point(addDays(today, -1), 3600), { ...point(addDays(today, -2), 0), unknownSources: ['steam'] }] });
+    const chart = await screen.findByRole('img', { name: /last 30 days/ });
+    expect(chart.querySelector('.chart-y')?.textContent).toBe('4h3h2h1h0');
+    expect(chart.querySelectorAll('.bar-unknown')).toHaveLength(1);
+  });
+
+  it('All range survives a first play dated after today (client clock behind)', async () => {
+    setup(200, { ...detail, daily: [point(addDays(today, 3), 600)] });
+    await screen.findByRole('img', { name: /last 30 days/ });
+    await userEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByRole('img', { name: /since/ }).querySelectorAll('.chart-col')).toHaveLength(1);
+  });
+
+  it('shows a not-in-library state on 400 (non-numeric id)', async () => {
+    setup(400);
+    expect(await screen.findByText("This game isn't in your library")).toBeTruthy();
   });
 
   it('shows a not-in-library state on 404', async () => {
