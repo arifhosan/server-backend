@@ -1,0 +1,37 @@
+:root {
+  --bg: #0e1014;
+  --header: #12151b;
+  --card: #161920;
+  --card-border: #22262f;
+  --surface: #1c2029;
+  --surface-hover: #242936;
+  --field-border: #2a2f3a;
+  --selected: #2a3550;
+  --text: #e8eaee;
+  --text-label: #c9ced8;
+  --muted: #a3aab8;
+  --faint: #7d8594;
+  --accent: #5b9bff;
+  --link: #8ab6ff;
+  --link-hover: #b9d3ff;
+  --primary: #2f6fe0;
+  --primary-hover: #2862c8;
+  --success: #4ade80;
+  --warn: #f5b544;
+  --warn-text: #f5d9a0;
+  --warn-bg: #221c10;
+  --warn-border: #5a4318;
+  --error: #fca5a5;
+  --error-bg: #2a1414;
+  --error-border: #5a2a2a;
+  --chip-steam-bg: #1a2a44;
+  --chip-steam-fg: #9cc2ff;
+  --chip-ps-bg: #3a2a10;
+  --chip-ps-fg: #fbc46a;
+  --chip-xbox-bg: #25330f;
+  --chip-xbox-fg: #c5ef7a;
+  --radius: 14px;
+  --focus: 2px solid #5b9bff;
+  --font-text: Inter, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', Inter, sans-serif;
+}
