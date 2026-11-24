@@ -307,6 +307,17 @@ PSN:
 - Day boundaries use the user's timezone (`user.timezone`, default
   `Europe/Berlin`, new column on `user`).
 
+### 6.10 Game art
+
+- `library_game.imageUrl` (nullable): Steam →
+  `https://cdn.cloudflare.steamstatic.com/steam/apps/<appid>/header.jpg`
+  (also for tracker-reported Steam games, appid known); PSN → the title's
+  image URL from `getUserPlayedGames`.
+- `game_icon` table (libraryGameId PK, PNG ≤ 64 KB) filled by
+  `PUT /games/tracker/icon`; served by `GET /games/library/:id/icon` (JWT,
+  user-scoped, `Cache-Control: private, max-age=86400`).
+- Stats/library/now-playing responses carry `imageUrl` and `hasIcon`.
+
 ### 6.9 Legacy data and removal of the scraper
 
 - A one-off import attaches existing data to the owner's user id:
@@ -354,16 +365,20 @@ PSN:
   pause tracking.
 - Tray icon changes when a game is running; tray menu has Open, Pause, Quit.
 
-**PSN renewal without copy-paste**
-- When PSN is `expiring` or `expired`, the tracker shows "Renew PSN sign-in".
-  It opens a Sony sign-in window (the app's own webview; the user signs in
-  normally, including 2FA), then loads
-  `https://ca.account.sony.com/api/v1/ssocookie`, reads the `npsso` value and
-  sends it to `PUT /games/tracker/psn` with the device token.
-- Feasibility of reading that page from a Tauri webview is checked with a spike
-  at the start of the tracker plan. Fallback: the dashboard's paste field.
-- Rejected: storing the PSN password and signing in headless with Chromium
-  (2FA and bot checks make it unreliable, and it would hold the password).
+**PSN status (owner's decision 2026-11-24: backend decides, tracker only shows)**
+- The tracker holds no PSN code or token. Every 10 min it calls
+  `GET /games/tracker/status` (device token); when the user has PSN connected
+  and it is `expiring` or `expired`, it shows "PSN sign-in expires in N days"
+  and a "Renew" button that opens the dashboard's Connections page in the
+  default browser. Renewal = paste a fresh NPSSO there.
+- Rejected: a Sony sign-in window inside the tracker (more tracker code for a
+  60-day chore), and storing the PSN password for headless sign-in (2FA, bot
+  checks, password custody).
+
+**Game icons**
+- For a game in an Xbox/Epic/other folder, the tracker sends the game's icon
+  once (Xbox: the logo file named in `MicrosoftGame.config`; others: the exe
+  icon), as a PNG ≤ 64 KB, to `PUT /games/tracker/icon`.
 
 **Detection** (Rust, every 15 s, `sysinfo`)
 - Build a library index at start and every 10 min:
@@ -410,6 +425,14 @@ PSN:
     countdown, status), manual "sync now"
   - Account: name, email, password, timezone
 - Unknown is not zero: days a source failed are marked as gaps.
+- **Now playing** card at the top of every page: polls `GET /games/now` every
+  30 s while the tab is visible; shows art, title, PC name, live session time.
+- **Game art everywhere a game appears**: Steam cover from Steam's CDN by
+  appid; PSN image from the played-games API; tracker-supplied icon for other
+  PC games; otherwise an initials tile. Backend exposes `imageUrl` and
+  `hasIcon` per game (section 6.10).
+- PSN `expiring`/`expired` shows a banner with a countdown and a renew flow
+  that links to Sony's NPSSO page and takes the pasted value.
 - Owner's requirements (2026-11-24): mobile friendly, professional looking,
   error free. At least three views: game time; chart plus a sortable table;
   selecting a game shows its playtime over days; pick a period and see all

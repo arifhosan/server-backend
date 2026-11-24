@@ -243,7 +243,8 @@ CREATE TABLE play_session (
   - `trackerPlatform(store: 'steam' | 'xbox' | 'epic' | 'other'): Platform` → `steam | xbox_pc | epic | pc_other`. External id = `storeId` when given, else `folder:` + `titleKey(title)`.
   - `TrackerService.ingest(device: DeviceContext, heartbeats: HeartbeatDto[], now?: Date): Promise<{ accepted: number; rejected: number }>`.
   - `TrackerService.nowPlaying(userId: number, now?: Date): Promise<NowPlaying[]>` where `NowPlaying { deviceId; deviceName; libraryGameId; title; platform: Platform; startedAt: Date }`.
-  - Routes: `POST /games/tracker/heartbeats` (`DeviceAuthGuard`) body `{ heartbeats: HeartbeatDto[] }` (1–500) where `HeartbeatDto { at: ISO string; game: { store: 'steam'|'xbox'|'epic'|'other'; storeId?: string (≤64); title: string (1–255); exe?: string (≤255) } }`; `GET /games/now` (`JwtAuthGuard`) → `NowPlaying[]`.
+  - `TrackerService.status(userId: number): Promise<TrackerStatus>` where `TrackerStatus { psn: { status: ConnectionStatus; expiresAt: Date | null } | null }` (`null` when the user has no PSN connection; reads the `connection` table directly).
+  - Routes: `GET /games/tracker/status` (`DeviceAuthGuard`) → `TrackerStatus`; `POST /games/tracker/heartbeats` (`DeviceAuthGuard`) body `{ heartbeats: HeartbeatDto[] }` (1–500) where `HeartbeatDto { at: ISO string; game: { store: 'steam'|'xbox'|'epic'|'other'; storeId?: string (≤64); title: string (1–255); exe?: string (≤255) } }`; `GET /games/now` (`JwtAuthGuard`) → `NowPlaying[]`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -264,6 +265,7 @@ at t-30s  → 'ignore'
   - two devices, same game, same minutes → two sessions (lookup keyed by `deviceId` + `libraryGameId`) (Review Focus 5).
   - one device, two games → two sessions.
   - `nowPlaying` returns only sessions with `endedAt >= now − 120 s` and source `tracker`.
+  - `status`: user without a PSN connection → `{ psn: null }`; with one in status `expiring` and `secretExpiresAt` set → `{ psn: { status: 'expiring', expiresAt } }`; never includes the secret.
 
 - [ ] **Step 2: Run** `npm test -- games/tracker` → FAIL.
 
@@ -437,18 +439,14 @@ at t-30s  → 'ignore'
   - `PublicConnection { provider: Provider; externalId: string; displayName: string; status: ConnectionStatus; secretExpiresAt: Date | null; lastSyncAt; lastSuccessAt; lastError: string | null; lastGameCount: number | null }`.
   - `GET /games/connections` → `PublicConnection[]`.
   - `PUT /games/connections/steam { profile: string (1–255) }`: resolve id, fetch titles once as the test (private → 400 with the `SteamPrivateProfileError` message), upsert connection, start a sync without awaiting it (`void this.sync.syncConnection(id).catch(log)`), return `PublicConnection`.
-  - `PUT /games/connections/psn { npsso: string (20–200) }`: `connect`, seal the secret, `secretExpiresAt = npssoExpiresAt`, upsert, start a sync, return `PublicConnection`. A bad NPSSO → 400 `'PSN rejected this token. Copy a fresh one and try again.'`
-  - `PUT /games/tracker/psn { npsso }` with `DeviceAuthGuard` (in `tracker.controller.ts`): same as above for the device's user, so the tracker can renew PSN without copy-paste. Returns `PublicConnection`.
-  - `POST /games/connections/:provider/sync` → the finished `SyncRun` (409 while one is running).
+  - `PUT /games/connections/psn { npsso: string (20–200) }`: `connect`, seal the secret, `secretExpiresAt = npssoExpiresAt`, upsert, start a sync, return `PublicConnection`. A bad NPSSO → 400 `'PSN rejected this token. Copy a fresh one and try again.'`  - `POST /games/connections/:provider/sync` → the finished `SyncRun` (409 while one is running).
   - `DELETE /games/connections/:provider` → deletes the connection; library games and sessions stay.
 
 - [ ] **Step 1: Write failing tests**
   - `JSON.stringify` of every service return value contains neither `secret`, the NPSSO, nor any token value.
   - user A cannot sync or delete user B's connection (404).
   - Steam private profile → `BadRequestException` with the private-profile message, nothing saved.
-  - reconnecting PSN replaces the secret and resets status to `ok`.
-  - `PUT /games/tracker/psn` with a revoked device token → 401; with a valid one → connection saved for that device's user only.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** tests, typecheck, lint → PASS.
+  - reconnecting PSN replaces the secret and resets status to `ok`.- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** tests, typecheck, lint → PASS.
 - [ ] **Step 5: Commit** `feat(games): Steam and PSN connections API`
 
 ---
@@ -530,7 +528,38 @@ at t-30s  → 'ignore'
 
 ---
 
+### Task 12: Game art
+
+**Files:**
+- Create: `src/modules/games/entities/game-icon.entity.ts`, `src/modules/games/library/art.ts` + `art.spec.ts`
+- Modify: `library-game.entity.ts` (add `imageUrl`), `sync/steam.client.ts`, `sync/psn.client.ts`, `sync/platform-client.ts` (`ObservedTitle.imageUrl?`), `sync/sync.service.ts` (persist it), `tracker/tracker.service.ts` + `tracker.controller.ts` (icon upload; Steam heartbeats set the CDN URL), `stats/stats.service.ts` + `stats.controller.ts` + `stats.types.ts` (expose art, serve icon), `docs/games-module.md` (SQL)
+
+**Interfaces:**
+- Consumes: Tasks 4, 6, 7, 8, 10.
+- Produces:
+  - SQL appended to `docs/games-module.md`:
+```sql
+ALTER TABLE library_game ADD COLUMN imageUrl VARCHAR(512) NULL;
+CREATE TABLE game_icon (
+  libraryGameId INT NOT NULL PRIMARY KEY,
+  png MEDIUMBLOB NOT NULL,
+  updatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+);
+```
+  - `steamImageUrl(appid: string): string` → `https://cdn.cloudflare.steamstatic.com/steam/apps/<appid>/header.jpg`.
+  - `isPng(buf: Buffer): boolean` (checks the 8-byte PNG signature).
+  - `PUT /games/tracker/icon` (`DeviceAuthGuard`) body `{ game: { store, storeId?, title }, png: string (base64) }`: decoded size ≤ 65 536 bytes and `isPng` else 400; upserts by the same library-game resolution as heartbeats; 204.
+  - `GET /games/library/:id/icon` (`JwtAuthGuard`, user-scoped): `image/png` with `Cache-Control: private, max-age=86400`; 404 when none.
+  - Every game object returned by Task 10 routes and `NowPlaying` gains `imageUrl: string | null` and `hasIcon: boolean` (for a grouped library entry: first non-null `imageUrl` among its platforms, preferring steam, then ps5, then ps4; `hasIcon` true if any member has an icon).
+  - Steam sync and tracker Steam heartbeats set `imageUrl = steamImageUrl(appid)`; PSN sync sets it from the title's image URL in the played-games response.
+
+- [ ] **Step 1: Write failing tests**: `steamImageUrl('1091500')` exact URL; `isPng` true for a real 1×1 PNG, false for JPEG bytes; icon upload of 70 000 bytes → 400; non-PNG → 400; another user's `GET …/icon` → 404; Steam `fetchTitles` mapping now includes `imageUrl`; PSN mapping takes the response's image URL; library group prefers the steam image.
+- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** tests, typecheck, lint → PASS.
+- [ ] **Step 5: Commit** `feat(games): game art from Steam, PSN and tracker icons`
+
+---
+
 ## Later plans (not in this one)
 
-- **Tracker plan** (Tauri, Windows): consumes `POST /games/tracker/heartbeats` and device tokens. Includes the tracker window design, which goes to the owner before it is built.
+- **Tracker plan** (Tauri, Windows): consumes `GET /games/tracker/status`, `POST /games/tracker/heartbeats`, `PUT /games/tracker/icon` and device tokens. Window design approved by the owner on 2026-11-24 (now playing, today on this PC, connection status, PSN status line with Renew → opens the dashboard, Settings, Pause).
 - **Dashboard plan**: mockups with the owner first, then the build against the Task 10 endpoints, the nginx container, and the Traefik host route.
