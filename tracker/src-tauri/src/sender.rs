@@ -174,6 +174,22 @@ fn run_flush(app: &AppHandle, q: &mut Queue) {
     publish(app);
 }
 
+/// Once per game session, upload its icon on a background thread (never delays the flush).
+fn upload_new_icons(app: &AppHandle, dir: &Path, tried: &mut std::collections::HashSet<String>) {
+    let playing = app.state::<Shared>().state.lock_ok().playing.clone();
+    tried.retain(|k| playing.iter().any(|g| &g.key == k));
+    for g in playing.into_iter().filter(|g| tried.insert(g.key.clone())) {
+        let (app, dir) = (app.clone(), dir.to_path_buf());
+        std::thread::spawn(move || {
+            let shared = app.state::<Shared>();
+            let server = shared.settings.lock_ok().server_url.clone();
+            if let Some(t) = token::get() {
+                crate::icons::send_once(&Api::new(&server), &t, &shared.settings, &dir, &g);
+            }
+        });
+    }
+}
+
 /// 60 s loop: one heartbeat per running game into the queue, then flush. A message on the wake channel flushes only.
 pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
     let (tx, rx) = mpsc::channel();
@@ -181,6 +197,7 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
     std::thread::spawn(move || {
         let mut q = Queue::open(dir.join("queue.jsonl"));
         let mut today = Today::load(&dir, &today_str());
+        let mut icon_tried = std::collections::HashSet::new(); // keys tried this session
         app.state::<Shared>().state.lock_ok().today_seconds = today.seconds;
         loop {
             match rx.recv_timeout(TICK) {
@@ -191,6 +208,7 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
                         publish(&app);
                     }
                     let hbs = heartbeats(&app.state::<Shared>().state.lock_ok(), now);
+                    upload_new_icons(&app, &dir, &mut icon_tried);
                     // disk full etc.: this minute is lost (and not counted), the loop must go on
                     if !hbs.is_empty() && q.push(&hbs).is_ok() {
                         today.add(&dir, &today_str(), 60 * hbs.len() as u64);
@@ -352,6 +370,7 @@ mod tests {
             store_id: Some("1".into()),
             title: "Hades".into(),
             exe: "h.exe".into(),
+            logo: None,
             started_at: now(),
         });
         assert_eq!(heartbeats(&st, now()).len(), 1);

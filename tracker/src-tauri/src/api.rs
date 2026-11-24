@@ -115,6 +115,24 @@ impl Api {
         }
     }
 
+    /// Upload a game icon (PNG bytes). 401 -> `Unauthorized`; 400 (bad or oversized PNG) -> `Server(400)`.
+    pub fn put_icon(&self, token: &str, store: &str, store_id: Option<&str>, title: &str, png: &[u8]) -> Result<(), SendError> {
+        use base64::Engine as _;
+        let game = HeartbeatGame { store: store_name(store), store_id: store_id.map(String::from), title: title.into(), exe: None };
+        let res = self
+            .http
+            .put(format!("{}/games/tracker/icon", self.base))
+            .bearer_auth(token)
+            .json(&serde_json::json!({ "game": game, "png": base64::engine::general_purpose::STANDARD.encode(png) }))
+            .send()
+            .map_err(|e| SendError::Network(e.without_url().to_string()))?;
+        match res.status().as_u16() {
+            200..=299 => Ok(()),
+            401 => Err(SendError::Unauthorized),
+            c => Err(SendError::Server(c)),
+        }
+    }
+
     pub fn tracker_status(&self, token: &str) -> Result<TrackerStatus, SendError> {
         let res = self
             .http
