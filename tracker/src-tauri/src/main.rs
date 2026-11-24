@@ -79,7 +79,13 @@ fn apply_paused(app: &AppHandle, paused: bool) -> Res {
         next.save(&config_dir()).map_err(|e| e.to_string())?;
         *s = next;
     }
-    shared.state.lock_ok().paused = paused;
+    {
+        let mut st = shared.state.lock_ok();
+        st.paused = paused;
+        if paused {
+            st.playing.clear(); // pausing stops reporting: nothing is "playing" any more
+        }
+    }
     publish(app);
     Ok(())
 }
@@ -202,7 +208,9 @@ fn start_detection(app: AppHandle) {
                             RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, started_at }
                         })
                         .collect();
-                    st.playing = playing;
+                    if !st.paused {
+                        st.playing = playing; // pause may have been hit while scanning
+                    }
                 }
                 publish(&app);
             }

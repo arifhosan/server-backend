@@ -1,6 +1,6 @@
 use crate::api::{Api, Heartbeat, SendError};
 use crate::queue::Queue;
-use crate::state::Connection;
+use crate::state::{AppState, Connection};
 use crate::{publish, token, LockOk, Shared};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -61,18 +61,41 @@ impl Today {
         if t.date == date { t } else { Today { date: date.into(), seconds: 0 } }
     }
 
-    fn add(&mut self, dir: &Path, date: &str, secs: u64) {
-        if self.date != date {
-            *self = Today { date: date.into(), seconds: 0 };
-        }
-        self.seconds += secs;
+    fn save(&self, dir: &Path) {
         let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::write(dir.join("today.json"), serde_json::to_string(&*self).unwrap_or_default());
+        let _ = std::fs::write(dir.join("today.json"), serde_json::to_string(self).unwrap_or_default());
+    }
+
+    /// Start a new day when the local date changed; true if it did.
+    fn roll(&mut self, dir: &Path, date: &str) -> bool {
+        if self.date == date {
+            return false;
+        }
+        *self = Today { date: date.into(), seconds: 0 };
+        self.save(dir);
+        true
+    }
+
+    fn add(&mut self, dir: &Path, date: &str, secs: u64) {
+        self.roll(dir, date);
+        self.seconds += secs;
+        self.save(dir);
     }
 }
 
 fn today_str() -> String {
     Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// One heartbeat per running game; none while paused.
+fn heartbeats(st: &AppState, now: DateTime<Utc>) -> Vec<Heartbeat> {
+    if st.paused {
+        return vec![];
+    }
+    st.playing
+        .iter()
+        .filter_map(|g| Heartbeat::new(now, g.store.as_str(), g.store_id.as_deref(), &g.title, Some(&g.exe)))
+        .collect()
 }
 
 fn run_flush(app: &AppHandle, q: &mut Queue) {
@@ -84,10 +107,7 @@ fn run_flush(app: &AppHandle, q: &mut Queue) {
             Flush::Sent(_) => Connection::Ok { last_sent_at: Some(Utc::now().timestamp()) },
             Flush::Offline => Connection::Offline { queued: q.len() as u32 },
             Flush::Revoked => Connection::Revoked,
-            Flush::Idle => match shared.state.lock_ok().connection.clone() {
-                Connection::Offline { .. } | Connection::NoToken => Connection::Ok { last_sent_at: None },
-                c => c,
-            },
+            Flush::Idle => return, // nothing sent: no new information about the server
         },
     };
     shared.state.lock_ok().connection = conn;
@@ -106,16 +126,13 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
             match rx.recv_timeout(TICK) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     let now = Utc::now();
-                    let hbs: Vec<Heartbeat> = app
-                        .state::<Shared>()
-                        .state
-                        .lock_ok()
-                        .playing
-                        .iter()
-                        .filter_map(|g| Heartbeat::new(now, g.store.as_str(), g.store_id.as_deref(), &g.title, Some(&g.exe)))
-                        .collect();
-                    if !hbs.is_empty() {
-                        let _ = q.push(&hbs); // disk full etc.: this minute is lost, the loop must go on
+                    if today.roll(&dir, &today_str()) {
+                        app.state::<Shared>().state.lock_ok().today_seconds = 0;
+                        publish(&app);
+                    }
+                    let hbs = heartbeats(&app.state::<Shared>().state.lock_ok(), now);
+                    // disk full etc.: this minute is lost (and not counted), the loop must go on
+                    if !hbs.is_empty() && q.push(&hbs).is_ok() {
                         today.add(&dir, &today_str(), 60 * hbs.len() as u64);
                         app.state::<Shared>().state.lock_ok().today_seconds = today.seconds;
                     }
@@ -227,6 +244,34 @@ mod tests {
         s.mock("POST", "/games/tracker/heartbeats").with_status(503).create();
         assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now()), Flush::Offline);
         assert_eq!(q.len(), 2);
+    }
+
+    #[test]
+    fn paused_produces_no_heartbeats() {
+        use crate::library::Store;
+        let mut st = AppState::new(true, false);
+        st.playing.push(crate::state::RunningGame {
+            key: "steam:1".into(),
+            store: Store::Steam,
+            store_id: Some("1".into()),
+            title: "Hades".into(),
+            exe: "h.exe".into(),
+            started_at: now(),
+        });
+        assert_eq!(heartbeats(&st, now()).len(), 1);
+        st.paused = true;
+        assert!(heartbeats(&st, now()).is_empty());
+    }
+
+    #[test]
+    fn midnight_rollover_resets_with_no_games() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut t = Today::load(dir.path(), "2026-11-24");
+        t.add(dir.path(), "2026-11-24", 600);
+        assert!(!t.roll(dir.path(), "2026-11-24"));
+        assert!(t.roll(dir.path(), "2026-11-25"));
+        assert_eq!(t.seconds, 0);
+        assert_eq!(Today::load(dir.path(), "2026-11-25").seconds, 0);
     }
 
     #[test]
