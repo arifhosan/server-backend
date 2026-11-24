@@ -8,6 +8,7 @@
 # Before the first deploy of this image, create the radio presets table
 # (docs/radio-module.md) and the token usage table (README, "Token usage").
 # Without them only those two features fail; everything else works regardless.
+# The games dashboard is a second service below (nginx, static files).
 # The games module needs its tables first: follow the deploy runbook in
 # docs/games-module.md.
 
@@ -85,6 +86,21 @@ services:
       # If the database is a container on its own network, add that network
       # here and declare it below, otherwise DB_HOST will not resolve:
       #   - database
+
+  # Games dashboard SPA. games.server.arifhosan.me/api/* has the longer rule on
+  # the backend (games-api), so it wins; everything else lands here.
+  dashboard:
+    image: ghcr.io/arifhosan/server-dashboard:latest
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.games.rule=Host(`games.server.arifhosan.me`)
+      - traefik.http.routers.games.entrypoints=websecure
+      - traefik.http.routers.games.tls=true
+      - traefik.http.routers.games.tls.certresolver=myresolver
+      - traefik.http.services.games.loadbalancer.server.port=80
+    networks:
+      - traefik
 
 networks:
   traefik:

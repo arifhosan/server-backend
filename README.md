@@ -15,6 +15,8 @@ Steam and PSN sync), and a voice assistant backend for a self-built ESP32 speake
 | `voice`    | `POST /voice/ota`, `GET /voice/ws`, `GET /voice/client` | ESP32 voice assistant: speech in, speech out. See [docs/voice-protocol.md](docs/voice-protocol.md). |
 | `tokens`   | `GET /tokens/last7`, `POST /tokens` | Claude Code token usage per day for the portfolio. See "Token usage" below. |
 
+The games dashboard SPA lives in `dashboard/` and ships as its own nginx image (`ghcr.io/arifhosan/server-dashboard`), served at `games.server.arifhosan.me`. See [docs/games-module.md](docs/games-module.md#deploy-runbook).
+
 ## Layout
 
 This repo is one deployable serving several **unrelated** sub-projects. Each
