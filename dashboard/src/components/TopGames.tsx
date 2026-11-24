@@ -22,7 +22,7 @@ export function TopGames({ games }: { games: TopGame[] }) {
           {games.map((g, i) => (
             <li key={g.titleKey}>
               <span className="top-rank">{i + 1}</span>
-              <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} libraryGameId={g.libraryGameId} title={g.title} />
+              <GameArt imageUrl={g.imageUrl} hasIcon={g.hasIcon} iconLibraryGameId={g.iconLibraryGameId} libraryGameId={g.libraryGameId} title={g.title} />
               <Link className="top-title" to={`/games/${g.libraryGameId}`}>
                 {g.title}
               </Link>

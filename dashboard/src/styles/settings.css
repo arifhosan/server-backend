@@ -4,17 +4,13 @@
 .set-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .card-warn { border-color: var(--warn-border); }
 .download { background: #131a24; border: 1px solid #27405f; border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.strong { font-weight: 600; }
 .big { font-size: 16px; }
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
 .grow { flex: 1 1 200px; min-width: 0; }
 .col { display: flex; flex-direction: column; gap: 8px; }
 .col p { margin: 0; }
 .row-end { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .steps { margin: 0; padding-left: 20px; color: var(--text-label); display: flex; flex-direction: column; gap: 4px; }
 .lbl { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; }
-.field { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--field-border); border-radius: 8px; padding: 0 12px; min-height: 44px; min-width: 0; }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn.primary:hover { background: var(--primary-hover); color: #fff; }
 .btn.primary:disabled { opacity: 0.5; cursor: default; }

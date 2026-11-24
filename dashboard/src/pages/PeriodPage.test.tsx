@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router';
 import type { Period } from '../api/types';
 import { AuthContext } from '../auth/AuthContext';
 import { groupGames } from '../components/StackedDayChart';
@@ -15,7 +15,7 @@ const game = (n: number, seconds: number): Period['games'][number] => ({
 
 function Where() {
   const l = useLocation();
-  return <output data-testid="where">{l.search}</output>;
+  return <output data-testid="where" data-nav={useNavigationType()}>{l.search}</output>;
 }
 function renderPage(url: string, period: Period = { days: [], games: [], dayGames: [] }) {
   const fetchMock = vi.fn(async (u: string) => (u.startsWith('/api/games/period') ? reply(period) : reply([])));
@@ -77,6 +77,42 @@ describe('PeriodPage', () => {
   it('shows the empty state for a period with no play', async () => {
     renderPage('/period?from=2026-11-01&to=2026-11-07');
     expect(await screen.findByText('No play in this period')).toBeTruthy();
+  });
+
+  it('date edits replace the history entry, presets push', () => {
+    renderPage('/period?from=2026-11-01&to=2026-11-07');
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-11-08' } });
+    expect(screen.getByTestId('where').getAttribute('data-nav')).toBe('REPLACE');
+    fireEvent.click(screen.getByRole('button', { name: 'Last 30 days' }));
+    expect(screen.getByTestId('where').getAttribute('data-nav')).toBe('PUSH');
+  });
+
+  it('colours a session dot by the session titleKey', async () => {
+    const period: Period = {
+      days: [{ date: '2026-11-02', seconds: 3900, estimated: false, unknownSources: [] }],
+      games: [game(1, 3000), game(2, 900)],
+      dayGames: [],
+    };
+    const session = { id: 1, libraryGameId: 99, titleKey: 'g2', title: 'Game 2 (PS5)', platform: 'ps5', source: 'psn', deviceId: null, startedAt: '2026-11-02T10:00:00Z', endedAt: '2026-11-02T10:15:00Z', seconds: 900, imageUrl: null, hasIcon: false };
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => reply(u.startsWith('/api/games/period') ? period : [session])));
+    render(
+      <MemoryRouter initialEntries={['/period?from=2026-11-01&to=2026-11-07']}>
+        <AuthContext value={auth}><PeriodPage /></AuthContext>
+      </MemoryRouter>,
+    );
+    const row = (await screen.findByText('Game 2 (PS5)')).parentElement!;
+    expect((row.querySelector('.p-dot') as HTMLElement).style.background).toBe('rgb(245, 158, 11)'); // second series colour
+  });
+
+  it('Share is relative to the games listed, never above 100%', async () => {
+    const period: Period = {
+      days: [{ date: '2026-11-02', seconds: 1000, estimated: false, unknownSources: [] }],
+      games: [game(1, 1500), game(2, 500)],
+      dayGames: [],
+    };
+    renderPage('/period?from=2026-11-01&to=2026-11-07', period);
+    expect(await screen.findByText('75%')).toBeTruthy();
+    expect(screen.getByText('25%')).toBeTruthy();
   });
 
   it('renders totals, table and sessions for a period with play', async () => {

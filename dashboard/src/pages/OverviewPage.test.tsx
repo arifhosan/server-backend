@@ -35,6 +35,13 @@ describe('OverviewPage', () => {
     expect(screen.queryByLabelText('Now playing')).toBeNull();
   });
 
+  it('says "same as last week" when the weeks are equal', async () => {
+    mock(overview({ thisWeek: 3600, lastWeek: 3600, health: { connections: [], devices: [{ id: 1, name: 'PC', lastSeenAt: null }] } }));
+    renderPage();
+    expect(await screen.findByText(/same as last week/)).toBeTruthy();
+    expect(screen.queryByText(/\+—/)).toBeNull();
+  });
+
   it('hides now playing when empty, shows it with a ticking session otherwise', async () => {
     const o = overview({
       today: 3600, thisWeek: 7200, lastWeek: 3600,

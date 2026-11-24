@@ -21,12 +21,6 @@
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .label { display: flex; flex-direction: column; gap: 6px; color: var(--text-label); font-size: 13px; font-weight: 500; }
-.field {
-  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--field-border);
-  border-radius: 8px; padding: 0 12px; min-height: 44px; width: 100%;
-}
-.field::placeholder { color: var(--faint); }
-.field[aria-invalid='true'] { border-color: var(--error); }
 .hint { color: var(--muted); font-weight: 400; }
 .hint.error, .field-err { color: var(--error); font-weight: 400; }
 .alert {

@@ -29,6 +29,18 @@ h1, h2 { font-family: var(--font-display); }
 }
 .btn:hover { background: var(--surface-hover); color: var(--text); }
 
+/* shared utilities: defined once, here */
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.strong { font-weight: 600; }
+.chart-scroll { overflow-x: auto; }
+.field {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--field-border);
+  border-radius: 8px; padding: 0 12px; min-height: 44px; width: 100%; min-width: 0;
+}
+.field::placeholder { color: var(--faint); }
+.field[aria-invalid='true'] { border-color: var(--error); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

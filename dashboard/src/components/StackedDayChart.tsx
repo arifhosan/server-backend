@@ -47,11 +47,12 @@ export function StackedDayChart({ days, games, dayGames }: Props) {
   const every = days.length > 14 ? Math.ceil(days.length / 8) : 0;
   const short = { month: 'short', day: 'numeric' } as const;
   const range = days.length ? `${fmt(days[0].date, short)} to ${fmt(days[days.length - 1].date, short)}` : '';
-  const label = `Playtime per day by game, ${range}, total ${formatDuration(total)}.`;
+  const top = [...games].sort((a, b) => b.seconds - a.seconds)[0];
+  const label = `Playtime per day by game, ${range}, total ${formatDuration(total)}.${top ? ` Most played: ${top.title}, ${formatDuration(top.seconds)}.` : ''}`;
 
   return (
     <>
-      <div className="legend" aria-label="Games">
+      <div className="legend">
         {series.map((s) => (
           <span key={s.key}>
             <i className="sw" aria-hidden="true" style={{ background: s.color }} />

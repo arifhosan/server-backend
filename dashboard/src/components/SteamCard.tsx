@@ -22,8 +22,8 @@ export function SteamCard({ conn, onChange }: { conn: PublicConnection | undefin
       onChange();
     }
   }
-  const act = async (fn: () => Promise<unknown>, on409?: string) => {
-    if (await run(fn, on409)) {
+  const act = async (fn: () => Promise<unknown>) => {
+    if (await run(fn)) {
       setConfirm(false);
       onChange();
     }
@@ -66,7 +66,7 @@ export function SteamCard({ conn, onChange }: { conn: PublicConnection | undefin
         </form>
       ) : (
         <div className="row-end">
-          <button className="btn" type="button" disabled={busy} onClick={() => void act(() => api('/games/connections/steam/sync', json('POST')), 'A sync is already running')}>
+          <button className="btn" type="button" disabled={busy || conn.status === 'disabled'} onClick={() => void act(() => api('/games/connections/steam/sync', json('POST')))}>
             Sync now
           </button>
           <button className="btn ghost" type="button" onClick={() => setEditing(true)}>

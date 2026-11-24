@@ -28,9 +28,9 @@
 .period td { padding: 9px 12px; border-top: 1px solid #22262f; }
 .period th { padding: 6px 12px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .period .num { text-align: right; font-variant-numeric: tabular-nums; }
-.game-cell { display: inline-flex; align-items: center; gap: 10px; }
-.game-cell a { color: var(--text); text-decoration: none; font-weight: 500; }
-.dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.p-game { display: inline-flex; align-items: center; gap: 10px; }
+.p-game a { color: var(--text); text-decoration: none; font-weight: 500; }
+.p-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .day-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; font-weight: 600; padding: 8px 0; border-top: 1px solid #22262f; }
 .sess { display: flex; gap: 12px; padding: 5px 0; align-items: center; }
 .sess .name { flex: 1; min-width: 0; }

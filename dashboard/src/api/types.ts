@@ -7,6 +7,8 @@ export type ConnectionStatus = 'ok' | 'expiring' | 'expired' | 'failing' | 'disa
 export interface GameArt {
   imageUrl: string | null;
   hasIcon: boolean;
+  /** Library row whose icon to show when it is not this object's own (backend 'iconLibraryGameId'). */
+  iconLibraryGameId?: number | null;
 }
 
 export interface User {
@@ -77,6 +79,7 @@ export interface Overview {
 export interface SessionRow extends GameArt {
   id: number;
   libraryGameId: number;
+  titleKey?: string;
   title: string;
   platform: Platform;
   source: string;

@@ -8,6 +8,12 @@ interface Props {
   labelEvery?: number;
   /** Days after this date (YYYY-MM-DD) are not yet lived: greyed, no data. */
   futureAfter?: string;
+  /** Replaces the generated accessible description. */
+  label?: string;
+  /** Space between bars in px (default 4); long ranges use less. */
+  gap?: number;
+  /** Labelled days show "Nov 5" instead of just the day number. */
+  dateLabels?: boolean;
 }
 
 const H = 200;
@@ -15,7 +21,7 @@ const fmt = (date: string, opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...opts }).format(new Date(`${date}T00:00:00Z`));
 const short = (date: string) => fmt(date, { month: 'short', day: 'numeric' });
 
-export function DayBarChart({ days, labelEvery, futureAfter }: Props) {
+export function DayBarChart({ days, labelEvery, futureAfter, label: labelOverride, gap = 4, dateLabels }: Props) {
   const isFuture = (d: DayPoint) => futureAfter !== undefined && d.date > futureAfter;
   const isUnknown = (d: DayPoint) => !isFuture(d) && d.unknownSources.length > 0;
   const max = Math.max(0, ...days.map((d) => d.seconds));
@@ -37,7 +43,7 @@ export function DayBarChart({ days, labelEvery, futureAfter }: Props) {
     (isFuture(d) ? 'not yet' : isUnknown(d) ? `unknown (no data from ${d.unknownSources.join(', ')})` : formatDuration(d.seconds));
 
   return (
-    <div role="img" aria-label={label} className="chart-scroll">
+    <div role="img" aria-label={labelOverride ?? label} className="chart-scroll">
       <div className="chart" style={{ minWidth: days.length > 10 ? 640 : 0 }}>
         <div className="chart-y" aria-hidden="true" style={{ height: H }}>
           {[4, 3, 2, 1, 0].map((i) => (
@@ -45,7 +51,7 @@ export function DayBarChart({ days, labelEvery, futureAfter }: Props) {
           ))}
         </div>
         <div className="chart-main">
-          <div className="chart-plot" style={{ height: H, backgroundSize: `100% ${H / 4}px` }}>
+          <div className="chart-plot" style={{ height: H, gap, backgroundSize: `100% ${H / 4}px` }}>
             {days.map((d) => (
               <div key={d.date} className="chart-col" title={tip(d)} style={{ height: H }}>
                 {isUnknown(d) ? (
@@ -57,14 +63,21 @@ export function DayBarChart({ days, labelEvery, futureAfter }: Props) {
               </div>
             ))}
           </div>
-          <div className="chart-x" aria-hidden="true">
+          <div className="chart-x" aria-hidden="true" style={{ gap }}>
             {days.map((d, i) => (
               <span key={d.date} className={isFuture(d) ? 'future' : undefined}>
-                {labelEvery
-                  ? i % labelEvery === 0 || i === days.length - 1
-                    ? fmt(d.date, { day: 'numeric' })
-                    : ''
-                  : fmt(d.date, { weekday: 'short', day: 'numeric' })}
+                {labelEvery ? (
+                  i % labelEvery === 0 || (!dateLabels && i === days.length - 1) ? (
+                    dateLabels ? short(d.date) : fmt(d.date, { day: 'numeric' })
+                  ) : (
+                    ''
+                  )
+                ) : (
+                  <>
+                    {fmt(d.date, { weekday: 'short' })}
+                    <span className="x-day"> {fmt(d.date, { day: 'numeric' })}</span>
+                  </>
+                )}
               </span>
             ))}
           </div>
