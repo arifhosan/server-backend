@@ -12,7 +12,7 @@ mod token;
 
 use serde::Serialize;
 use settings::{config_dir, dashboard_url, Settings};
-use state::{AppState, Connection, RunningGame};
+use state::{AppState, Connection};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{
@@ -169,6 +169,28 @@ fn unignore(shared: State<Shared>, title: String) -> Res {
     s.save(&config_dir()).map_err(|e| e.to_string())
 }
 
+/// Add the title to the ignore list (case-insensitive, deduplicated), stop showing it as playing, and publish.
+#[tauri::command]
+fn ignore(app: AppHandle, title: String) -> Res {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("Title is empty".into());
+    }
+    let shared = app.state::<Shared>();
+    {
+        let mut s = shared.settings.lock_ok();
+        if !s.ignored.iter().any(|t| t.eq_ignore_ascii_case(title)) {
+            let mut next = s.clone();
+            next.ignored.push(title.to_string());
+            next.save(&config_dir()).map_err(|e| e.to_string())?;
+            *s = next;
+        }
+    }
+    shared.state.lock_ok().playing.retain(|g| !g.title.eq_ignore_ascii_case(title));
+    publish(&app);
+    Ok(())
+}
+
 #[tauri::command]
 fn open_dashboard(app: AppHandle, path: String) -> Res {
     if !path.starts_with('/') {
@@ -185,6 +207,7 @@ fn start_detection(app: AppHandle) {
         let Ok(mut sys) = System::new() else { return };
         let mut index = Vec::new();
         let mut indexed_at: Option<Instant> = None;
+        let mut last_poll = chrono::Utc::now();
         loop {
             if indexed_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)) {
                 index = library::build_index(&library::Roots::detect());
@@ -203,14 +226,10 @@ fn start_detection(app: AppHandle) {
                 {
                     let mut st = shared.state.lock_ok();
                     let now = chrono::Utc::now();
-                    let playing = found
-                        .into_iter()
-                        .map(|(g, exe)| {
-                            let key = format!("{}:{}", g.store.as_str(), g.store_id.as_deref().unwrap_or(&g.title));
-                            let started_at = st.playing.iter().find(|r| r.key == key).map_or(now, |r| r.started_at);
-                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, logo: g.logo, started_at }
-                        })
-                        .collect();
+                    // wall clock on purpose: it also jumps over a sleep, which is the case to catch
+                    let gap_reset = (now - last_poll).num_seconds() > 180;
+                    last_poll = now;
+                    let playing = detect::to_playing(found, &st.playing, now, gap_reset);
                     if !st.paused {
                         st.playing = playing; // pause may have been hit while scanning
                     }
@@ -226,16 +245,20 @@ fn start_detection(app: AppHandle) {
 fn spawn_updater(app: AppHandle) {
     use tauri_plugin_updater::UpdaterExt as _;
     std::thread::spawn(move || loop {
+        let mut wait = Duration::from_secs(24 * 60 * 60);
         tauri::async_runtime::block_on(async {
             if let Ok(updater) = app.updater() {
                 if let Ok(Some(update)) = updater.check().await {
-                    if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
+                    // never restart the app in the middle of a game session: try again in an hour
+                    if !app.state::<Shared>().state.lock_ok().playing.is_empty() {
+                        wait = Duration::from_secs(60 * 60);
+                    } else if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
                         app.restart();
                     }
                 }
             }
         });
-        std::thread::sleep(Duration::from_secs(24 * 60 * 60));
+        std::thread::sleep(wait);
     });
 }
 
@@ -253,7 +276,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            get_state, get_settings, save_settings, set_token, remove_token, set_paused, unignore, open_dashboard
+            get_state, get_settings, save_settings, set_token, remove_token, set_paused, unignore, ignore, open_dashboard
         ])
         .on_window_event(|w, ev| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = ev {

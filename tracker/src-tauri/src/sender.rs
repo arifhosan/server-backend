@@ -5,9 +5,12 @@ use crate::{publish, token, LockOk, Shared};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::mpsc, time::Duration};
+use crate::settings::write_atomic;
 use tauri::{AppHandle, Manager};
 
-const BATCH: usize = 500;
+const BATCH: usize = 100;
+/// Batches per tick at most: a big backlog must not stop the once-a-minute heartbeats from being queued.
+const MAX_BATCHES: usize = 10;
 const TICK: Duration = Duration::from_secs(60);
 
 /// Sending side of the wake channel; `set_token` uses it to flush at once.
@@ -65,10 +68,29 @@ fn apply_poll(st: &mut AppState, poll: StatusPoll) -> bool {
         return false;
     }
     match poll {
-        StatusPoll::Banner(b) => st.psn = b,
+        StatusPoll::Banner(b) => {
+            st.psn = b;
+            // the server answers again; nothing is queued, so no flush will ever say so
+            if st.connection == (Connection::Offline { queued: 0 }) {
+                st.connection = Connection::Ok { last_sent_at: None };
+            }
+        }
         StatusPoll::Revoked => st.connection = Connection::Revoked,
+        // unreachable server with an empty queue: the flush is Idle and silent, so this is the only signal
+        StatusPoll::Failed if matches!(st.connection, Connection::Ok { .. }) => {
+            st.connection = Connection::Offline { queued: 0 };
+        }
         StatusPoll::Failed => return false,
     }
+    true
+}
+
+/// Store a flush result unless the token was removed meanwhile (an in-flight flush must not undo that).
+fn apply_conn(st: &mut AppState, conn: Connection) -> bool {
+    if st.connection == Connection::NoToken {
+        return false;
+    }
+    st.connection = conn;
     true
 }
 
@@ -94,15 +116,20 @@ pub enum Flush {
     Revoked,
 }
 
-/// Send the queue oldest first in batches of 500. A batch is acked only after the server accepted it.
-pub fn flush(q: &mut Queue, api: &Api, token: &str, now: DateTime<Utc>) -> Flush {
+/// A refusal that retrying cannot fix (bad data, body too large): not auth, timeout or rate limit.
+fn is_permanent(code: u16) -> bool {
+    (400..500).contains(&code) && ![401, 408, 429].contains(&code)
+}
+
+/// Send the queue oldest first in batches of 100, at most 10 batches per call. A batch is acked only after the server
+/// accepted it, or refused it for good (4xx other than 401/408/429): that batch is dropped and counted in `dropped`,
+/// so one bad entry cannot jam the queue forever.
+pub fn flush(q: &mut Queue, api: &Api, token: &str, now: DateTime<Utc>, dropped: &mut u32) -> Flush {
     let mut sent = 0;
-    loop {
+    for _ in 0..MAX_BATCHES {
         let batch = q.peek_batch(BATCH, now);
         if batch.is_empty() {
-            // ack drops entries that expired while the queue was never sent
-            let _ = q.ack(0);
-            return if sent == 0 { Flush::Idle } else { Flush::Sent(sent) };
+            break;
         }
         match api.send_heartbeats(token, &batch) {
             Ok(()) => {
@@ -111,10 +138,18 @@ pub fn flush(q: &mut Queue, api: &Api, token: &str, now: DateTime<Utc>) -> Flush
                 }
                 sent += batch.len();
             }
+            Err(SendError::Server(c)) if is_permanent(c) => {
+                if q.ack(batch.len()).is_err() {
+                    return Flush::Offline;
+                }
+                *dropped += batch.len() as u32;
+            }
             Err(SendError::Unauthorized) => return Flush::Revoked,
             Err(SendError::Network(_) | SendError::Server(_)) => return Flush::Offline,
         }
     }
+    let _ = q.prune(now); // entries that expired while the queue was never sent
+    if sent == 0 { Flush::Idle } else { Flush::Sent(sent) }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -134,7 +169,7 @@ impl Today {
 
     fn save(&self, dir: &Path) {
         let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::write(dir.join("today.json"), serde_json::to_string(self).unwrap_or_default());
+        let _ = write_atomic(&dir.join("today.json"), serde_json::to_string(self).unwrap_or_default().as_bytes());
     }
 
     /// Start a new day when the local date changed; true if it did.
@@ -172,17 +207,24 @@ fn heartbeats(st: &AppState, now: DateTime<Utc>) -> Vec<Heartbeat> {
 fn run_flush(app: &AppHandle, q: &mut Queue) {
     let shared = app.state::<Shared>();
     let server = shared.settings.lock_ok().server_url.clone();
-    let conn = match token::get() {
-        None => Connection::NoToken,
-        Some(t) => match flush(q, &Api::new(&server), &t, Utc::now()) {
-            Flush::Sent(_) => Connection::Ok { last_sent_at: Some(Utc::now().timestamp()) },
-            Flush::Offline => Connection::Offline { queued: q.len() as u32 },
-            Flush::Revoked => Connection::Revoked,
-            Flush::Idle => return, // nothing sent: no new information about the server
-        },
+    // no token: remove_token / startup already show NoToken, so there is nothing to flush or to report
+    let Some(t) = token::get() else { return };
+    let now = Utc::now();
+    let mut dropped = 0;
+    let conn = match flush(q, &Api::new(&server), &t, now, &mut dropped) {
+        Flush::Sent(_) => Some(Connection::Ok { last_sent_at: Some(now.timestamp()) }),
+        Flush::Offline => Some(Connection::Offline { queued: q.live_len(now) as u32 }),
+        Flush::Revoked => Some(Connection::Revoked),
+        Flush::Idle => None, // nothing sent: no new information about the server
     };
-    shared.state.lock_ok().connection = conn;
-    publish(app);
+    let changed = {
+        let mut st = shared.state.lock_ok();
+        st.dropped_heartbeats += dropped;
+        conn.is_some_and(|c| apply_conn(&mut st, c)) || dropped > 0
+    };
+    if changed {
+        publish(app);
+    }
 }
 
 /// Once per game session, upload its icon on a background thread (never delays the flush).
@@ -207,6 +249,7 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
     app.manage(Wake(tx));
     std::thread::spawn(move || {
         let mut q = Queue::open(dir.join("queue.jsonl"));
+        let _ = q.prune(Utc::now());
         let mut today = Today::load(&dir, &today_str());
         let mut icon_tried = std::collections::HashSet::new(); // keys tried this session
         app.state::<Shared>().state.lock_ok().today_seconds = today.seconds;
@@ -214,6 +257,7 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
             match rx.recv_timeout(TICK) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     let now = Utc::now();
+                    let _ = q.prune(now); // expired entries go even while offline
                     if today.roll(&dir, &today_str()) {
                         app.state::<Shared>().state.lock_ok().today_seconds = 0;
                         publish(&app);
@@ -316,17 +360,96 @@ mod tests {
     }
 
     #[test]
-    fn six_hundred_go_as_500_then_100() {
+    fn backlog_goes_in_batches_of_100_capped_at_10_per_flush() {
         let dir = tempfile::tempdir().unwrap();
         let mut q = Queue::open(dir.path().join("q.jsonl"));
-        q.push(&hbs(600, now())).unwrap();
+        q.push(&hbs(1050, now())).unwrap();
         let mut s = mockito::Server::new();
-        let first = s.mock("POST", "/games/tracker/heartbeats").match_body(mockito::Matcher::Regex(r#""title":"g499""#.into())).with_status(200).expect(1).create();
-        let second = s.mock("POST", "/games/tracker/heartbeats").match_body(mockito::Matcher::Regex(r#""title":"g599""#.into())).with_status(200).expect(1).create();
-        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now()), Flush::Sent(600));
-        first.assert();
-        second.assert();
+        let m = s.mock("POST", "/games/tracker/heartbeats").with_status(200).expect(10).create();
+        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut 0), Flush::Sent(1000));
+        m.assert();
+        assert_eq!(q.len(), 50);
+        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut 0), Flush::Sent(50)); // the next tick drains the rest
         assert_eq!(q.len(), 0);
+    }
+
+    #[test]
+    fn bad_request_drops_that_batch_and_sends_the_next() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut q = Queue::open(dir.path().join("q.jsonl"));
+        q.push(&hbs(150, now())).unwrap();
+        let mut s = mockito::Server::new();
+        // first batch (g0..g99) is refused for good, the second (g100..g149) is accepted
+        let bad = s.mock("POST", "/games/tracker/heartbeats").match_body(mockito::Matcher::Regex(r#""title":"g0""#.into())).with_status(400).expect(1).create();
+        let good = s.mock("POST", "/games/tracker/heartbeats").match_body(mockito::Matcher::Regex(r#""title":"g100""#.into())).with_status(200).expect(1).create();
+        let mut dropped = 0;
+        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut dropped), Flush::Sent(50));
+        bad.assert();
+        good.assert();
+        assert_eq!((dropped, q.len()), (100, 0));
+    }
+
+    #[test]
+    fn retryable_4xx_keeps_the_queue() {
+        for code in [408, 429] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut q = Queue::open(dir.path().join("q.jsonl"));
+            q.push(&hbs(3, now())).unwrap();
+            let mut s = mockito::Server::new();
+            s.mock("POST", "/games/tracker/heartbeats").with_status(code).create();
+            let mut dropped = 0;
+            assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut dropped), Flush::Offline);
+            assert_eq!((dropped, q.len()), (0, 3));
+        }
+    }
+
+    #[test]
+    fn offline_counts_only_live_entries_and_prunes() {
+        use chrono::Duration as D;
+        let dir = tempfile::tempdir().unwrap();
+        let mut q = Queue::open(dir.path().join("q.jsonl"));
+        q.push(&hbs(2, now() - D::days(31))).unwrap();
+        q.push(&hbs(3, now())).unwrap();
+        assert_eq!((q.len(), q.live_len(now())), (5, 3));
+        q.prune(now()).unwrap();
+        assert_eq!(Queue::open(dir.path().join("q.jsonl")).len(), 3);
+    }
+
+    #[test]
+    fn flush_result_never_overwrites_no_token() {
+        let mut st = AppState::new(false, false);
+        assert!(!apply_conn(&mut st, Connection::Ok { last_sent_at: Some(1) }));
+        assert!(!apply_conn(&mut st, Connection::Revoked));
+        assert_eq!(st.connection, Connection::NoToken);
+        let mut st = AppState::new(true, false);
+        assert!(apply_conn(&mut st, Connection::Offline { queued: 2 }));
+        assert_eq!(st.connection, Connection::Offline { queued: 2 });
+    }
+
+    #[test]
+    fn failed_poll_while_idle_shows_offline_and_recovers() {
+        let mut st = AppState::new(true, false);
+        assert!(apply_poll(&mut st, StatusPoll::Failed));
+        assert_eq!(st.connection, Connection::Offline { queued: 0 });
+        assert!(!apply_poll(&mut st, StatusPoll::Failed));
+        assert!(apply_poll(&mut st, StatusPoll::Banner(None)));
+        assert_eq!(st.connection, Connection::Ok { last_sent_at: None });
+        st.connection = Connection::Offline { queued: 4 }; // queued entries: only a flush may clear this
+        apply_poll(&mut st, StatusPoll::Banner(None));
+        assert_eq!(st.connection, Connection::Offline { queued: 4 });
+    }
+
+    #[test]
+    fn heartbeat_fields_are_clamped() {
+        let long = "é".repeat(300);
+        let h = Heartbeat::new(now(), "steam", Some(&"x".repeat(65)), &long, Some(&long)).unwrap();
+        assert_eq!(h.game.title.encode_utf16().count(), 255);
+        assert_eq!(h.game.exe.unwrap().encode_utf16().count(), 255);
+        assert_eq!(h.game.store_id, None);
+        assert_eq!(Heartbeat::new(now(), "steam", Some(&"x".repeat(64)), "t", None).unwrap().game.store_id.unwrap().len(), 64);
+        // astral chars are 2 units: 128 of them would be 256, so the 128th is cut, not split
+        let t = "😀".repeat(128);
+        assert_eq!(Heartbeat::new(now(), "steam", None, &t, None).unwrap().game.title.chars().count(), 127);
     }
 
     #[test]
@@ -349,9 +472,9 @@ mod tests {
             drop(c);
             drop(l.accept().unwrap()); // second batch: connection closed without a response
         });
-        assert_eq!(flush(&mut q, &Api::new(&url), "t", now()), Flush::Offline);
-        assert_eq!(q.len(), 100);
-        assert_eq!(Queue::open(dir.path().join("q.jsonl")).peek_batch(1, now())[0].game.title, "g500");
+        assert_eq!(flush(&mut q, &Api::new(&url), "t", now(), &mut 0), Flush::Offline);
+        assert_eq!(q.len(), 500);
+        assert_eq!(Queue::open(dir.path().join("q.jsonl")).peek_batch(1, now())[0].game.title, "g100");
     }
 
     #[test]
@@ -369,7 +492,7 @@ mod tests {
         q.push(&hbs(5, now())).unwrap();
         let mut s = mockito::Server::new();
         s.mock("POST", "/games/tracker/heartbeats").with_status(401).create();
-        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now()), Flush::Revoked);
+        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut 0), Flush::Revoked);
         assert_eq!(q.len(), 5);
     }
 
@@ -380,7 +503,7 @@ mod tests {
         q.push(&hbs(2, now())).unwrap();
         let mut s = mockito::Server::new();
         s.mock("POST", "/games/tracker/heartbeats").with_status(503).create();
-        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now()), Flush::Offline);
+        assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now(), &mut 0), Flush::Offline);
         assert_eq!(q.len(), 2);
     }
 
@@ -394,6 +517,7 @@ mod tests {
             store_id: Some("1".into()),
             title: "Hades".into(),
             exe: "h.exe".into(),
+            exe_path: "C:/g/h.exe".into(),
             logo: None,
             started_at: now(),
         });

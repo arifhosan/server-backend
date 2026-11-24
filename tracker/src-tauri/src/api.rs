@@ -53,17 +53,37 @@ impl<'de> Deserialize<'de> for HeartbeatGame {
     }
 }
 
+/// Longest prefix of `s` with at most `max` UTF-16 code units (the backend counts JS string length), cut on a char boundary.
+fn clamp16(s: &str, max: usize) -> &str {
+    let mut n = 0;
+    for (i, c) in s.char_indices() {
+        n += c.len_utf16();
+        if n > max {
+            return &s[..i];
+        }
+    }
+    s
+}
+
 impl Heartbeat {
-    /// None when the backend would reject it (blank title). Empty storeId/exe are omitted.
+    /// None when the backend would reject it (blank title). Empty storeId/exe are omitted. Over-long fields are
+    /// clamped (title 255, exe 255) or dropped (storeId over 64) so one odd game can never get the batch refused.
     pub fn new(at: DateTime<Utc>, store: &str, store_id: Option<&str>, title: &str, exe: Option<&str>) -> Option<Self> {
-        let title = title.trim();
+        let title = clamp16(title.trim(), 255).trim_end();
         if title.is_empty() {
             return None;
         }
-        let some = |v: Option<&str>| v.map(str::trim).filter(|v| !v.is_empty()).map(String::from);
+        fn some(v: Option<&str>) -> Option<&str> {
+            v.map(str::trim).filter(|v| !v.is_empty())
+        }
         Some(Heartbeat {
             at,
-            game: HeartbeatGame { store: store_name(store), store_id: some(store_id), title: title.into(), exe: some(exe) },
+            game: HeartbeatGame {
+                store: store_name(store),
+                store_id: some(store_id).filter(|v| v.chars().count() <= 64).map(String::from),
+                title: title.into(),
+                exe: some(exe).map(|v| clamp16(v, 255).to_string()),
+            },
         })
     }
 }
