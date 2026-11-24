@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConnectionsController } from './connections/connections.controller';
@@ -27,6 +28,7 @@ import { loadSecretKey } from './utils/secret-box';
 
 @Module({
   imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([
       Device,
