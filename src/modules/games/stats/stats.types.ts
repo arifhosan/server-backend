@@ -12,6 +12,7 @@ export interface DayPoint {
 
 /** titleKey is the group key: the real titleKey, or `#<libraryGameId>` when a title has none (Ruling R8). */
 export interface TopGame extends Art {
+  libraryGameId: number;
   titleKey: string;
   title: string;
   seconds: number;

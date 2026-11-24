@@ -18,7 +18,7 @@ import {
   Provider,
   TOTAL_EXCLUDED_SOURCES,
 } from '../games.types';
-import { Art, pickArt } from '../library/art';
+import { Art, pickArt, primaryId } from '../library/art';
 import { TrackerService } from '../tracker/tracker.service';
 import {
   addDays,
@@ -106,6 +106,14 @@ export class StatsService {
     for (const g of all)
       byKey.set(groupKey(g), [...(byKey.get(groupKey(g)) ?? []), g]);
     return (key) => pickArt(byKey.get(key) ?? [], iconIds);
+  }
+
+  /** Group key to the id of its preferred platform row, so link and icon agree with pickArt. */
+  private primaryIds(games: Iterable<LibraryGame>): (key: string) => number {
+    const byKey = new Map<string, LibraryGame[]>();
+    for (const g of games)
+      byKey.set(groupKey(g), [...(byKey.get(groupKey(g)) ?? []), g]);
+    return (key) => primaryId(byKey.get(key) as LibraryGame[]);
   }
 
   /** Serves the uploaded icon of one of the user's games. */
@@ -255,6 +263,7 @@ export class StatsService {
       this.devices.find({ where: { userId } }),
     ]);
     const artOf = await this.artIndex(data.games.values());
+    const primary = this.primaryIds(data.games.values());
     const all = splitIntoDays(data.sessions, tz);
     const sum = (a: string, b: string) =>
       days(a, b).reduce((t, d) => t + (all.get(d)?.seconds ?? 0), 0);
@@ -271,6 +280,7 @@ export class StatsService {
         titleKey: x.titleKey,
         title: x.g.title,
         seconds: x.seconds,
+        libraryGameId: primary(x.titleKey),
         ...artOf(x.titleKey),
       }));
     return {
@@ -459,6 +469,7 @@ export class StatsService {
       this.unknownByDay(userId, q.from, q.to, tz),
     ]);
     const artOf = await this.artIndex(data.games.values());
+    const primary = this.primaryIds(data.games.values());
     // Only sessions with a slice inside the range count towards the per-game stats.
     const inRange = data.sessions.filter((s) =>
       [...splitIntoDays([s], tz).keys()].some((d) => d >= q.from && d <= q.to),
@@ -489,6 +500,7 @@ export class StatsService {
           title: x.g.title,
           platforms: [...x.g.platforms],
           seconds: x.seconds,
+          libraryGameId: primary(x.titleKey),
           ...artOf(x.titleKey),
           sessionCount: x.g.sessions.length,
           firstPlayedAt: new Date(
