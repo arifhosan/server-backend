@@ -35,5 +35,16 @@
 .primary:disabled { opacity: 0.6; cursor: default; }
 .note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .note.center { text-align: center; }
-@media (max-width: 400px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
+/* 16px keeps iOS Safari from zooming on focus */
+.login .field { font-size: 16px; }
+.alert, .notice, .note, .hint, .field-err { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .login { min-height: 100dvh; padding: 24px 16px; }
+  .login-col { gap: 20px; }
+  .login-hero { gap: 8px; }
+  .login-hero h1 { font-size: 24px; }
+  .login-card { padding: 20px 16px; }
+  .tab-btn { padding: 0 4px; }
+}
 .notice { border: 1px solid var(--card-border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
