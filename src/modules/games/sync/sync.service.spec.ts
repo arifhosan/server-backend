@@ -889,6 +889,24 @@ describe('SyncService', () => {
       ]);
     });
 
+    it('the session ends at the title lastPlayedAt, not at the sync time', async () => {
+      const g = setup(null);
+      const played = new Date('2026-11-24T01:00:00Z');
+      fetchTitles.mockResolvedValue({
+        titles: [{ ...psnTitle(36_000 + 3600), lastPlayedAt: played }],
+      });
+      await service.syncConnection(1, new Date('2026-11-24T18:34:00Z'));
+      expect(synced()).toEqual([
+        expect.objectContaining({
+          libraryGameId: g.id,
+          source: 'psn',
+          seconds: 3600,
+          startedAt: scrape,
+          endedAt: played,
+        }),
+      ]);
+    });
+
     it('Steam: the same window rule applies', async () => {
       conn({ lastSuccessAt: null });
       const g = game({

@@ -306,6 +306,7 @@ export class SyncService {
       reportedSeconds: t.totalSeconds,
       windowStart: conn.lastSuccessAt,
       notBefore: scrapeAt,
+      lastPlayedAt: t.lastPlayedAt,
       now,
       alreadyTracked,
       minRemainder: MIN_SESSION_SECONDS,

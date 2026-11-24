@@ -8,6 +8,8 @@ export interface DeltaInput {
   minRemainder?: number;
   /** No play can have accrued before this (the last Exophase scrape the legacy totals carry). */
   notBefore?: Date | null;
+  /** The platform's last-played time: play ended then, not at the sync. */
+  lastPlayedAt?: Date | null;
 }
 
 export interface DeltaResult {
@@ -30,8 +32,12 @@ export function decideDelta(i: DeltaInput): DeltaResult {
     i.notBefore && i.notBefore > from
       ? new Date(Math.min(i.notBefore.getTime(), i.now.getTime()))
       : from;
-  const span = { startedAt, endedAt: i.now };
-  if (delta > (i.now.getTime() - startedAt.getTime()) / 1000) {
+  const endedAt =
+    i.lastPlayedAt && i.lastPlayedAt > startedAt && i.lastPlayedAt < i.now
+      ? i.lastPlayedAt
+      : i.now;
+  const span = { startedAt, endedAt };
+  if (delta > (endedAt.getTime() - startedAt.getTime()) / 1000) {
     return {
       updateTotal: true,
       session: { source: 'import', seconds: delta, ...span },

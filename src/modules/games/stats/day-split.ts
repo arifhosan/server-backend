@@ -91,7 +91,7 @@ export function splitIntoDays(
   return out;
 }
 
-/** Local days in [from, to] (from the later of `from` and creation, never today) with no ok run; only days inside the kept run history count. */
+/** Local days in [from, min(to, today)) (from the later of `from` and creation) with no ok run; only days inside the kept run history count. */
 export function unknownDays(
   runs: { startedAt: Date; ok: boolean }[],
   connectionCreatedAt: Date,
@@ -114,7 +114,9 @@ export function unknownDays(
   let day = [from, localDate(connectionCreatedAt, timeZone), oldest]
     .sort()
     .at(-1) as string;
-  for (; day <= to; day = addDays(day, 1))
+  // Future days cannot have synced yet either.
+  const last = to < today ? to : today;
+  for (; day <= last; day = addDays(day, 1))
     if (day !== today && !ok.has(day)) out.push(day);
   return out;
 }

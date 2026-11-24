@@ -48,6 +48,44 @@ describe('decideDelta', () => {
     ).toBe('import');
   });
 
+  it('ends at lastPlayedAt when it falls inside the window, else at now', () => {
+    const now18 = new Date('2026-11-24T18:34:00Z');
+    const scrape = new Date('2026-11-21T23:00:00Z');
+    const played = new Date('2026-11-24T01:00:00Z');
+    const r = (lastPlayedAt: Date | null, reportedSeconds = 1000 + 7200) =>
+      decideDelta({
+        priorSeconds: 1000,
+        priorChangedAt: null,
+        windowStart: scrape,
+        now: now18,
+        reportedSeconds,
+        lastPlayedAt,
+      }).session;
+    // PSN: window 11-21 23:00 -> sync 11-24 18:34, last played 11-24 01:00.
+    expect(r(played)).toEqual({
+      source: 'platform',
+      seconds: 7200,
+      startedAt: scrape,
+      endedAt: played,
+    });
+    // Before the window start, missing or after now: the sync time.
+    for (const x of [
+      new Date('2026-11-20T00:00:00Z'),
+      scrape,
+      null,
+      new Date('2026-11-25T00:00:00Z'),
+    ])
+      expect(r(x)?.endedAt).toEqual(now18);
+    // Seconds that no longer fit the shortened window: an import.
+    const tight = new Date(scrape.getTime() + 3600_000);
+    expect(r(tight)).toEqual({
+      source: 'import',
+      seconds: 7200,
+      startedAt: scrape,
+      endedAt: tight,
+    });
+  });
+
   it('makes a platform session for a normal delta', () => {
     const r = decideDelta({
       ...base,

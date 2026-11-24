@@ -133,6 +133,30 @@ describe('day-split', () => {
     ).toEqual(['2026-11-22']);
   });
 
+  it('unknownDays never flags days after today (week view ending in the future)', () => {
+    expect(
+      unknownDays(
+        [{ startedAt: d('2026-11-23T10:00:00Z'), ok: true }],
+        d('2026-11-01T00:00:00Z'),
+        '2026-11-23',
+        '2026-11-29',
+        'Europe/Berlin',
+        d('2026-11-24T18:34:00Z'),
+      ),
+    ).toEqual([]);
+    // Late evening UTC is already tomorrow in Tokyo: that day is today there, not future.
+    expect(
+      unknownDays(
+        [{ startedAt: d('2026-11-22T10:00:00Z'), ok: true }],
+        d('2026-11-01T00:00:00Z'),
+        '2026-11-22',
+        '2026-11-29',
+        'Asia/Tokyo',
+        d('2026-11-24T18:34:00Z'),
+      ),
+    ).toEqual(['2026-11-23', '2026-11-24']);
+  });
+
   it('unknownDays skips days before the run history and today', () => {
     const runs = [{ startedAt: d('2026-11-23T10:00:00Z'), ok: true }];
     expect(
