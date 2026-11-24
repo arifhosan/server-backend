@@ -10,3 +10,5 @@ docker-compose.yaml
 .env
 .env.example
 *.md
+dashboard
+tracker

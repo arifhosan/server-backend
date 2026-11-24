@@ -18,15 +18,24 @@ export const steamImageUrl = (appid: string): string =>
 export const isPng = (buf: Buffer): boolean =>
   buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIGNATURE);
 
+const rank = (p: string) => {
+  const i = PREFERENCE.indexOf(p);
+  return i === -1 ? PREFERENCE.length : i;
+};
+
+/** The row a group links to: steam, ps5, ps4, then the rest (lowest id breaks ties). */
+export const primaryId = (
+  members: Pick<LibraryGame, 'id' | 'platform'>[],
+): number =>
+  [...members].sort(
+    (a, b) => rank(a.platform) - rank(b.platform) || a.id - b.id,
+  )[0].id;
+
 /** Art for a group of platform rows: first non-null imageUrl in steam, ps5, ps4, other order. */
 export function pickArt(
   members: Pick<LibraryGame, 'id' | 'platform' | 'imageUrl'>[],
   iconIds: Set<number>,
 ): Art {
-  const rank = (p: string) => {
-    const i = PREFERENCE.indexOf(p);
-    return i === -1 ? PREFERENCE.length : i;
-  };
   const withImage = members
     .filter((m) => m.imageUrl)
     .sort((a, b) => rank(a.platform) - rank(b.platform))[0];

@@ -115,8 +115,6 @@ Authoritative list (README points here). Auth: **JWT** = the cookie or `Authoriz
 
 Game objects carry `imageUrl` (Steam CDN or PSN image, or null) and `hasIcon` (a tracker icon exists; fetch it from the icon route).
 
-The icon upload body is JSON: base64 of 64 KB is about 87 KB. `src/common/body-parsers.ts` gives `PUT /games/tracker/icon` a 128kb JSON limit (the Express default of 100kb applies elsewhere), so a PNG over 64 KB gets a 400.
-
 Public host: `games.server.arifhosan.me/api/*` (Traefik strips `/api`).
 
 ## Deploy runbook
