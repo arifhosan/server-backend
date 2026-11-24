@@ -248,10 +248,11 @@ describe('SyncService', () => {
     const a = conn({ id: 1, provider: 'psn' });
     const b = conn({ id: 2 });
     fetchTitles
-      .mockRejectedValueOnce(new SecretExpiredError())
+      .mockRejectedValueOnce(new SecretExpiredError('Re-enter NPSSO'))
       .mockResolvedValueOnce({ titles: [steamTitle()] });
     await service.syncAll();
     expect(a.status).toBe('expired');
+    expect(a.lastError).toBe('Re-enter NPSSO');
     expect(b.status).toBe('ok');
     expect(runs.map((r) => r.ok)).toEqual([false, true]);
   });
