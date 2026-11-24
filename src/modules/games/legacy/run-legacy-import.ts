@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../../../app.module';
+import { LegacyImportCliModule } from './legacy-import.module';
 import { LegacyImportService } from './legacy-import.service';
 
 /** node dist/modules/games/legacy/run-legacy-import.js --user-id <id> [--commit]  (dry run unless --commit) */
@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(userId) || userId < 1) {
     throw new Error('usage: run-legacy-import --user-id <id> [--commit]');
   }
-  const app = await NestFactory.createApplicationContext(AppModule);
+  const app = await NestFactory.createApplicationContext(LegacyImportCliModule);
   try {
     const report = await app
       .get(LegacyImportService)
