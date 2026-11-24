@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
 import { Spinner } from './components/Spinner';
+import { GamePage } from './pages/GamePage';
+import { LibraryPage } from './pages/LibraryPage';
 import { LoginPage } from './pages/LoginPage';
 
 /** Signed-out visitors go to /login?next=<where they were headed>. */
@@ -22,8 +24,8 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route index element={<Page title="Overview" />} />
-        <Route path="library" element={<Page title="Library" />} />
-        <Route path="games/:id" element={<Page title="Game" />} />
+        <Route path="library" element={<LibraryPage />} />
+        <Route path="games/:id" element={<GamePage />} />
         <Route path="period" element={<Page title="Period" />} />
         <Route path="settings" element={<Page title="Devices & connections" />} />
         <Route path="*" element={<Page title="Not found" />} />

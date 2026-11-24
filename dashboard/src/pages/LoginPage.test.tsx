@@ -21,6 +21,8 @@ function mockBackend(opts: { loginStatus?: number } = {}) {
       return reply(200, { access_token: 't', user: ME });
     }
     if (key === 'POST /api/auth/register') return reply(201, ME);
+    if (key === 'GET /api/games/library') return reply(200, []);
+    if (url.startsWith('/api/games/period?')) return reply(200, { days: [], games: [], dayGames: [] });
     return reply(404);
   });
   vi.stubGlobal('fetch', fn);
