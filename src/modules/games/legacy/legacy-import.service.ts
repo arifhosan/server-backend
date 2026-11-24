@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 import { Platform } from '../games.types';
 import {
@@ -14,6 +14,7 @@ import {
 } from './legacy-plan';
 
 export interface LegacyImportReport {
+  user: { id: number; email: string };
   /** Rows in the legacy tables, and legacy-origin rows in the new tables after the import. */
   counts: {
     game: number;
@@ -52,6 +53,8 @@ const toGame = (r: LegacyGameRow): LegacyGameRow => ({
 
 @Injectable()
 export class LegacyImportService {
+  private readonly logger = new Logger(LegacyImportService.name);
+
   constructor(private readonly dataSource: DataSource) {}
 
   async run(
@@ -62,7 +65,15 @@ export class LegacyImportService {
     await qr.connect();
     await qr.startTransaction();
     try {
+      const [user] = (await qr.query(
+        'SELECT id, email FROM `user` WHERE id = ?',
+        [userId],
+      )) as { id: number; email: string }[];
+      if (!user) {
+        throw new Error(`User ${userId} does not exist; nothing imported`);
+      }
       const report = await this.importAndCheck(qr, userId);
+      report.user = { id: Number(user.id), email: user.email };
       if (opts.commit) {
         await qr.commitTransaction();
         report.committed = true;
@@ -71,7 +82,11 @@ export class LegacyImportService {
       }
       return report;
     } catch (e) {
-      if (qr.isTransactionActive) await qr.rollbackTransaction();
+      try {
+        if (qr.isTransactionActive) await qr.rollbackTransaction();
+      } catch (rollbackError) {
+        this.logger.error(`Rollback failed: ${String(rollbackError)}`);
+      }
       throw e;
     } finally {
       await qr.release();
@@ -98,7 +113,9 @@ export class LegacyImportService {
       )) as LegacyGameRow[]
     ).map(toGame);
     const days = (
-      (await qr.query('SELECT date, totalMs FROM playtime ORDER BY id')) as {
+      (await qr.query(
+        "SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, totalMs FROM playtime ORDER BY id",
+      )) as {
         date: string | Date;
         totalMs: string | number;
       }[]
@@ -158,6 +175,7 @@ export class LegacyImportService {
       unknownPlatforms: plan.unknownPlatforms,
       dayMismatches: dayMismatches(days, games),
       committed: false,
+      user: { id: userId, email: '' }, // filled in by run()
     };
   }
 
