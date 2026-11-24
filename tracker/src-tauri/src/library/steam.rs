@@ -1,4 +1,4 @@
-use super::{file_name, InstalledGame, Store};
+use super::{file_name, norm, InstalledGame, Store};
 use std::path::{Path, PathBuf};
 
 /// The two quoted strings of a `"key"<ws>"value"` line, `\\` and `\"` unescaped.
@@ -55,11 +55,6 @@ pub fn parse_manifest(acf: &str, library: &Path) -> Option<InstalledGame> {
         install_dir: library.join("steamapps").join("common").join(dir),
         logo: None,
     })
-}
-
-/// Same-directory key: backslashes, lowercase, no trailing separator.
-fn norm(p: &Path) -> String {
-    p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
 
 pub fn scan(steam: Option<&Path>) -> Vec<InstalledGame> {
