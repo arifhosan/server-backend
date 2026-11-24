@@ -14,6 +14,7 @@ pub struct RunningGame {
     pub store_id: Option<String>,
     pub title: String,
     pub exe: String,
+    pub logo: Option<std::path::PathBuf>,
     pub started_at: DateTime<Utc>,
 }
 
@@ -39,7 +40,7 @@ pub enum Connection {
     NoToken,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct PsnBanner {
     /// "expiring" | "expired"
     pub status: String,

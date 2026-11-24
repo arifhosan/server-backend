@@ -1,5 +1,6 @@
 import { PublicConnection } from '../connections/connections.service';
 import { Platform, Provider } from '../games.types';
+import { Art } from '../library/art';
 import { NowPlaying } from '../tracker/tracker.service';
 
 export interface DayPoint {
@@ -10,7 +11,7 @@ export interface DayPoint {
 }
 
 /** titleKey is the group key: the real titleKey, or `#<libraryGameId>` when a title has none (Ruling R8). */
-export interface TopGame {
+export interface TopGame extends Art {
   titleKey: string;
   title: string;
   seconds: number;
@@ -29,7 +30,7 @@ export interface Overview {
   };
 }
 
-export interface SessionRow {
+export interface SessionRow extends Art {
   id: number;
   libraryGameId: number;
   title: string;
@@ -41,7 +42,7 @@ export interface SessionRow {
   seconds: number;
 }
 
-export interface LibraryEntry {
+export interface LibraryEntry extends Art {
   titleKey: string;
   title: string;
   totalSeconds: number;
@@ -54,7 +55,9 @@ export interface LibraryEntry {
 }
 
 export interface GameDetail extends LibraryEntry {
+  /** Sparse: only days with play, oldest first (the client fills gaps); chart sources only, unknownSources always []. */
   daily: DayPoint[];
+  /** Last 100, newest first; import and legacy_test sessions are excluded, like the charts. */
   sessions: SessionRow[];
 }
 

@@ -1,10 +1,19 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthenticatedUser } from '../../../common/auth/auth.types';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../../common/auth/jwt-auth.guard';
 import { DeviceAuthGuard, DeviceContext } from '../devices/device-auth.guard';
-import { HeartbeatsDto } from '../dto/heartbeats.dto';
+import { HeartbeatsDto, IconUploadDto } from '../dto/heartbeats.dto';
 import { NowPlaying, TrackerService, TrackerStatus } from './tracker.service';
 
 type DeviceRequest = Request & { device: DeviceContext };
@@ -26,6 +35,13 @@ export class TrackerController {
     @Body() dto: HeartbeatsDto,
   ): Promise<{ accepted: number; rejected: number }> {
     return this.tracker.ingest(req.device, dto.heartbeats);
+  }
+
+  @Put('tracker/icon')
+  @HttpCode(204)
+  @UseGuards(DeviceAuthGuard)
+  icon(@Req() req: DeviceRequest, @Body() dto: IconUploadDto): Promise<void> {
+    return this.tracker.saveIcon(req.device.userId, dto.game, dto.png);
   }
 
   @Get('now')

@@ -157,6 +157,12 @@ export class SyncService {
     now: Date,
   ): Promise<void> {
     const game = await this.library.findOrAdopt(conn.userId, t, m);
+    if (t.imageUrl && game.imageUrl !== t.imageUrl) {
+      game.imageUrl = t.imageUrl;
+      await m
+        .getRepository(LibraryGame)
+        .update(game.id, { imageUrl: t.imageUrl });
+    }
     const steam = conn.provider === 'steam';
     let alreadyTracked = 0;
     if (steam && game.totalChangedAt)

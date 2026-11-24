@@ -1,6 +1,6 @@
-use crate::api::{Api, Heartbeat, SendError};
+use crate::api::{Api, Heartbeat, SendError, TrackerStatus};
 use crate::queue::Queue;
-use crate::state::Connection;
+use crate::state::{AppState, Connection, PsnBanner};
 use crate::{publish, token, LockOk, Shared};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,77 @@ const TICK: Duration = Duration::from_secs(60);
 
 /// Sending side of the wake channel; `set_token` uses it to flush at once.
 pub struct Wake(pub mpsc::Sender<()>);
+
+/// Wakes the status poller (after a token is set).
+pub struct StatusWake(pub mpsc::Sender<()>);
+
+/// Banner only for `expiring` (days rounded up) and `expired`; an expiry already in the past counts as expired.
+pub fn psn_banner(st: &TrackerStatus, now: DateTime<Utc>) -> Option<PsnBanner> {
+    let p = st.psn.as_ref()?;
+    let expired = || Some(PsnBanner { status: "expired".into(), days: None });
+    match p.status.as_str() {
+        "expired" => expired(),
+        "expiring" => {
+            let secs = (p.expires_at? - now).num_seconds(); // no expiry date: nothing true to show
+            if secs <= 0 {
+                return expired();
+            }
+            Some(PsnBanner { status: "expiring".into(), days: Some(((secs + 86_399) / 86_400) as u32) })
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StatusPoll {
+    Banner(Option<PsnBanner>),
+    Revoked,
+    /// network or server error: keep what is shown
+    Failed,
+}
+
+pub fn poll_status(api: &Api, token: &str, now: DateTime<Utc>) -> StatusPoll {
+    match api.tracker_status(token) {
+        Ok(st) => StatusPoll::Banner(psn_banner(&st, now)),
+        Err(SendError::Unauthorized) => StatusPoll::Revoked,
+        Err(_) => StatusPoll::Failed,
+    }
+}
+
+fn run_status(app: &AppHandle) {
+    let shared = app.state::<Shared>();
+    let server = shared.settings.lock_ok().server_url.clone();
+    let Some(t) = token::get() else { return };
+    let poll = poll_status(&Api::new(&server), &t, Utc::now());
+    if apply_poll(&mut shared.state.lock_ok(), poll) {
+        publish(app);
+    }
+}
+
+/// Store a poll result; false if nothing changed. A result that arrives after the token was removed is dropped.
+fn apply_poll(st: &mut AppState, poll: StatusPoll) -> bool {
+    if st.connection == Connection::NoToken {
+        return false;
+    }
+    match poll {
+        StatusPoll::Banner(b) => st.psn = b,
+        StatusPoll::Revoked => st.connection = Connection::Revoked,
+        StatusPoll::Failed => return false,
+    }
+    true
+}
+
+/// Every 10 min, and at once on a wake message.
+pub fn spawn_status(app: AppHandle) {
+    let (tx, rx) = mpsc::channel();
+    app.manage(StatusWake(tx));
+    std::thread::spawn(move || loop {
+        run_status(&app);
+        if let Err(mpsc::RecvTimeoutError::Disconnected) = rx.recv_timeout(Duration::from_secs(600)) {
+            return;
+        }
+    });
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Flush {
@@ -61,18 +132,41 @@ impl Today {
         if t.date == date { t } else { Today { date: date.into(), seconds: 0 } }
     }
 
-    fn add(&mut self, dir: &Path, date: &str, secs: u64) {
-        if self.date != date {
-            *self = Today { date: date.into(), seconds: 0 };
-        }
-        self.seconds += secs;
+    fn save(&self, dir: &Path) {
         let _ = std::fs::create_dir_all(dir);
-        let _ = std::fs::write(dir.join("today.json"), serde_json::to_string(&*self).unwrap_or_default());
+        let _ = std::fs::write(dir.join("today.json"), serde_json::to_string(self).unwrap_or_default());
+    }
+
+    /// Start a new day when the local date changed; true if it did.
+    fn roll(&mut self, dir: &Path, date: &str) -> bool {
+        if self.date == date {
+            return false;
+        }
+        *self = Today { date: date.into(), seconds: 0 };
+        self.save(dir);
+        true
+    }
+
+    fn add(&mut self, dir: &Path, date: &str, secs: u64) {
+        self.roll(dir, date);
+        self.seconds += secs;
+        self.save(dir);
     }
 }
 
 fn today_str() -> String {
     Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// One heartbeat per running game; none while paused.
+fn heartbeats(st: &AppState, now: DateTime<Utc>) -> Vec<Heartbeat> {
+    if st.paused {
+        return vec![];
+    }
+    st.playing
+        .iter()
+        .filter_map(|g| Heartbeat::new(now, g.store.as_str(), g.store_id.as_deref(), &g.title, Some(&g.exe)))
+        .collect()
 }
 
 fn run_flush(app: &AppHandle, q: &mut Queue) {
@@ -84,14 +178,27 @@ fn run_flush(app: &AppHandle, q: &mut Queue) {
             Flush::Sent(_) => Connection::Ok { last_sent_at: Some(Utc::now().timestamp()) },
             Flush::Offline => Connection::Offline { queued: q.len() as u32 },
             Flush::Revoked => Connection::Revoked,
-            Flush::Idle => match shared.state.lock_ok().connection.clone() {
-                Connection::Offline { .. } | Connection::NoToken => Connection::Ok { last_sent_at: None },
-                c => c,
-            },
+            Flush::Idle => return, // nothing sent: no new information about the server
         },
     };
     shared.state.lock_ok().connection = conn;
     publish(app);
+}
+
+/// Once per game session, upload its icon on a background thread (never delays the flush).
+fn upload_new_icons(app: &AppHandle, dir: &Path, tried: &mut std::collections::HashSet<String>) {
+    let playing = app.state::<Shared>().state.lock_ok().playing.clone();
+    tried.retain(|k| playing.iter().any(|g| &g.key == k));
+    for g in playing.into_iter().filter(|g| tried.insert(g.key.clone())) {
+        let (app, dir) = (app.clone(), dir.to_path_buf());
+        std::thread::spawn(move || {
+            let shared = app.state::<Shared>();
+            let server = shared.settings.lock_ok().server_url.clone();
+            if let Some(t) = token::get() {
+                crate::icons::send_once(&Api::new(&server), &t, &shared.settings, &dir, &g);
+            }
+        });
+    }
 }
 
 /// 60 s loop: one heartbeat per running game into the queue, then flush. A message on the wake channel flushes only.
@@ -101,21 +208,20 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
     std::thread::spawn(move || {
         let mut q = Queue::open(dir.join("queue.jsonl"));
         let mut today = Today::load(&dir, &today_str());
+        let mut icon_tried = std::collections::HashSet::new(); // keys tried this session
         app.state::<Shared>().state.lock_ok().today_seconds = today.seconds;
         loop {
             match rx.recv_timeout(TICK) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     let now = Utc::now();
-                    let hbs: Vec<Heartbeat> = app
-                        .state::<Shared>()
-                        .state
-                        .lock_ok()
-                        .playing
-                        .iter()
-                        .filter_map(|g| Heartbeat::new(now, g.store.as_str(), g.store_id.as_deref(), &g.title, Some(&g.exe)))
-                        .collect();
-                    if !hbs.is_empty() {
-                        let _ = q.push(&hbs); // disk full etc.: this minute is lost, the loop must go on
+                    if today.roll(&dir, &today_str()) {
+                        app.state::<Shared>().state.lock_ok().today_seconds = 0;
+                        publish(&app);
+                    }
+                    let hbs = heartbeats(&app.state::<Shared>().state.lock_ok(), now);
+                    upload_new_icons(&app, &dir, &mut icon_tried);
+                    // disk full etc.: this minute is lost (and not counted), the loop must go on
+                    if !hbs.is_empty() && q.push(&hbs).is_ok() {
                         today.add(&dir, &today_str(), 60 * hbs.len() as u64);
                         app.state::<Shared>().state.lock_ok().today_seconds = today.seconds;
                     }
@@ -140,6 +246,55 @@ mod tests {
 
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 24, 10, 0, 0).unwrap()
+    }
+
+    fn status(s: &str, exp: Option<&str>) -> TrackerStatus {
+        TrackerStatus {
+            psn: Some(crate::api::PsnStatus { status: s.into(), expires_at: exp.map(|e| e.parse().unwrap()) }),
+        }
+    }
+
+    #[test]
+    fn poll_after_token_removal_is_dropped() {
+        let b = || StatusPoll::Banner(Some(PsnBanner { status: "expired".into(), days: None }));
+        let mut st = AppState::new(false, false);
+        assert!(!apply_poll(&mut st, b()));
+        assert!(st.psn.is_none());
+        assert!(!apply_poll(&mut st, StatusPoll::Revoked));
+        assert_eq!(st.connection, Connection::NoToken);
+        let mut st = AppState::new(true, false);
+        assert!(apply_poll(&mut st, b()));
+        assert!(st.psn.is_some());
+    }
+
+    #[test]
+    fn psn_banner_cases() {
+        let b = psn_banner(&status("expiring", Some("2026-12-03T14:00:00Z")), now()).unwrap(); // 9.17 days
+        assert_eq!((b.status.as_str(), b.days), ("expiring", Some(10)));
+        let b = psn_banner(&status("expiring", Some("2026-11-25T10:00:00Z")), now()).unwrap(); // exactly 1 day
+        assert_eq!(b.days, Some(1));
+        let b = psn_banner(&status("expiring", Some("2026-11-24T09:00:00Z")), now()).unwrap(); // already past
+        assert_eq!((b.status.as_str(), b.days), ("expired", None));
+        assert_eq!(psn_banner(&status("expired", None), now()).unwrap().status, "expired");
+        assert!(psn_banner(&status("expiring", None), now()).is_none());
+        for s in ["ok", "failing", "disabled"] {
+            assert!(psn_banner(&status(s, None), now()).is_none());
+        }
+        assert!(psn_banner(&TrackerStatus { psn: None }, now()).is_none());
+    }
+
+    #[test]
+    fn status_401_is_revoked_and_200_parses() {
+        let mut s = mockito::Server::new();
+        let m = s.mock("GET", "/games/tracker/status").match_header("authorization", "Bearer t").with_status(401).create();
+        assert_eq!(poll_status(&Api::new(&s.url()), "t", now()), StatusPoll::Revoked);
+        m.remove();
+        s.mock("GET", "/games/tracker/status")
+            .with_body(r#"{"psn":{"status":"expired","expiresAt":null}}"#)
+            .create();
+        assert!(matches!(poll_status(&Api::new(&s.url()), "t", now()), StatusPoll::Banner(Some(_))));
+        s.mock("GET", "/games/tracker/status").with_status(500).create();
+        assert_eq!(poll_status(&Api::new(&s.url()), "t", now()), StatusPoll::Failed);
     }
 
     #[test]
@@ -227,6 +382,35 @@ mod tests {
         s.mock("POST", "/games/tracker/heartbeats").with_status(503).create();
         assert_eq!(flush(&mut q, &Api::new(&s.url()), "t", now()), Flush::Offline);
         assert_eq!(q.len(), 2);
+    }
+
+    #[test]
+    fn paused_produces_no_heartbeats() {
+        use crate::library::Store;
+        let mut st = AppState::new(true, false);
+        st.playing.push(crate::state::RunningGame {
+            key: "steam:1".into(),
+            store: Store::Steam,
+            store_id: Some("1".into()),
+            title: "Hades".into(),
+            exe: "h.exe".into(),
+            logo: None,
+            started_at: now(),
+        });
+        assert_eq!(heartbeats(&st, now()).len(), 1);
+        st.paused = true;
+        assert!(heartbeats(&st, now()).is_empty());
+    }
+
+    #[test]
+    fn midnight_rollover_resets_with_no_games() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut t = Today::load(dir.path(), "2026-11-24");
+        t.add(dir.path(), "2026-11-24", 600);
+        assert!(!t.roll(dir.path(), "2026-11-24"));
+        assert!(t.roll(dir.path(), "2026-11-25"));
+        assert_eq!(t.seconds, 0);
+        assert_eq!(Today::load(dir.path(), "2026-11-25").seconds, 0);
     }
 
     #[test]

@@ -4,10 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { DataSource, In, LessThan, MoreThan, Repository } from 'typeorm';
 import { toPublicConnection } from '../connections/connections.service';
 import { Connection } from '../entities/connection.entity';
 import { Device } from '../entities/device.entity';
+import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { SyncRun } from '../entities/sync-run.entity';
@@ -17,6 +18,7 @@ import {
   Provider,
   TOTAL_EXCLUDED_SOURCES,
 } from '../games.types';
+import { Art, pickArt } from '../library/art';
 import { TrackerService } from '../tracker/tracker.service';
 import {
   addDays,
@@ -84,7 +86,35 @@ export class StatsService {
     private readonly devices: Repository<Device>,
     private readonly dataSource: DataSource,
     private readonly tracker: TrackerService,
+    @InjectRepository(GameIcon)
+    private readonly icons: Repository<GameIcon>,
   ) {}
+
+  /** Art lookup by group key, over every platform row the caller passes. */
+  private async artIndex(
+    games: Iterable<LibraryGame>,
+  ): Promise<(key: string) => Art> {
+    const all = [...games];
+    const rows = all.length
+      ? await this.icons.find({
+          select: { libraryGameId: true },
+          where: { libraryGameId: In(all.map((g) => g.id)) },
+        })
+      : [];
+    const iconIds = new Set(rows.map((r) => r.libraryGameId));
+    const byKey = new Map<string, LibraryGame[]>();
+    for (const g of all)
+      byKey.set(groupKey(g), [...(byKey.get(groupKey(g)) ?? []), g]);
+    return (key) => pickArt(byKey.get(key) ?? [], iconIds);
+  }
+
+  /** Serves the uploaded icon of one of the user's games. */
+  async icon(userId: number, id: number): Promise<Buffer> {
+    const game = await this.games.findOneBy({ id, userId });
+    const icon = game && (await this.icons.findOneBy({ libraryGameId: id }));
+    if (!icon) throw new NotFoundException('Icon not found');
+    return icon.png;
+  }
 
   private async timeZone(userId: number): Promise<string> {
     // `user` belongs to the auth module: read the one column directly.
@@ -114,7 +144,7 @@ export class StatsService {
         where: {
           userId,
           startedAt: LessThan(localMidnight(addDays(to, 1), tz)),
-          endedAt: MoreThanOrEqual(localMidnight(from, tz)),
+          endedAt: MoreThan(localMidnight(from, tz)),
         },
       }),
       this.games.find({ where: { userId } }),
@@ -137,6 +167,7 @@ export class StatsService {
     from: string,
     to: string,
     tz: string,
+    now = new Date(),
   ): Promise<Map<string, Provider[]>> {
     const out = new Map<string, Provider[]>();
     const conns = await this.connections.find({ where: { userId } });
@@ -144,13 +175,14 @@ export class StatsService {
     const runs = await this.runs.find({
       where: { connectionId: In(conns.map((c) => c.id)) },
     });
-    for (const c of conns)
+    for (const c of conns.filter((c) => c.status !== 'disabled'))
       for (const day of unknownDays(
         runs.filter((r) => r.connectionId === c.id),
         c.createdAt,
         from,
         to,
         tz,
+        now,
       ))
         out.set(day, [...(out.get(day) ?? []), c.provider]);
     return out;
@@ -217,11 +249,12 @@ export class StatsService {
     const from = [addDays(monday, -7), from30].sort()[0];
     const [data, unknown, nowPlaying, conns, devices] = await Promise.all([
       this.chartSessions(userId, from, today, tz),
-      this.unknownByDay(userId, from30, today, tz),
+      this.unknownByDay(userId, from30, today, tz, now),
       this.tracker.nowPlaying(userId, now),
       this.connections.find({ where: { userId } }),
       this.devices.find({ where: { userId } }),
     ]);
+    const artOf = await this.artIndex(data.games.values());
     const all = splitIntoDays(data.sessions, tz);
     const sum = (a: string, b: string) =>
       days(a, b).reduce((t, d) => t + (all.get(d)?.seconds ?? 0), 0);
@@ -238,6 +271,7 @@ export class StatsService {
         titleKey: x.titleKey,
         title: x.g.title,
         seconds: x.seconds,
+        ...artOf(x.titleKey),
       }));
     return {
       nowPlaying,
@@ -273,12 +307,19 @@ export class StatsService {
       tz,
       q.platform,
     );
+    const artOf = await this.artIndex(games.values());
     return sessions
       .filter((s) => !q.libraryGameId || s.libraryGameId === q.libraryGameId)
-      .map((s) => this.row(s, games.get(s.libraryGameId) as LibraryGame));
+      .map((s) =>
+        this.row(s, games.get(s.libraryGameId) as LibraryGame, artOf),
+      );
   }
 
-  private row(s: PlaySession, g: LibraryGame): SessionRow {
+  private row(
+    s: PlaySession,
+    g: LibraryGame,
+    artOf: (key: string) => Art,
+  ): SessionRow {
     return {
       id: s.id,
       libraryGameId: s.libraryGameId,
@@ -289,6 +330,7 @@ export class StatsService {
       startedAt: s.startedAt,
       endedAt: s.endedAt,
       seconds: s.seconds,
+      ...artOf(groupKey(g)),
     };
   }
 
@@ -310,6 +352,7 @@ export class StatsService {
             (sums.get(s.libraryGameId) ?? 0) + s.seconds,
           );
     }
+    const artOf = await this.artIndex(games);
     const grouped = new Map<string, LibraryGame[]>();
     for (const g of games)
       grouped.set(groupKey(g), [...(grouped.get(groupKey(g)) ?? []), g]);
@@ -336,6 +379,7 @@ export class StatsService {
             )
           : null,
         platforms,
+        ...artOf(titleKey),
       };
     });
   }
@@ -361,12 +405,13 @@ export class StatsService {
     const g = all.find((x) => x.id === id);
     if (!g) throw new NotFoundException('Game not found');
     const members = all.filter((x) => groupKey(x) === groupKey(g));
-    const [[entry], rows, tz] = await Promise.all([
+    const [[entry], rows, tz, artOf] = await Promise.all([
       this.entries(userId, members),
       this.sessions_.find({
         where: { userId, libraryGameId: In(members.map((m) => m.id)) },
       }),
       this.timeZone(userId),
+      this.artIndex(members),
     ]);
     const chart = rows
       .filter((s) => !CHART_EXCLUDED_SOURCES.includes(s.source))
@@ -386,7 +431,9 @@ export class StatsService {
       daily,
       sessions: chart
         .slice(0, 100)
-        .map((s) => this.row(s, byId.get(s.libraryGameId) as LibraryGame)),
+        .map((s) =>
+          this.row(s, byId.get(s.libraryGameId) as LibraryGame, artOf),
+        ),
     };
   }
 
@@ -411,8 +458,13 @@ export class StatsService {
       this.chartSessions(userId, q.from, q.to, tz, q.platform),
       this.unknownByDay(userId, q.from, q.to, tz),
     ]);
+    const artOf = await this.artIndex(data.games.values());
+    // Only sessions with a slice inside the range count towards the per-game stats.
+    const inRange = data.sessions.filter((s) =>
+      [...splitIntoDays([s], tz).keys()].some((d) => d >= q.from && d <= q.to),
+    );
     const perGame = this.groupDays(
-      this.groups(data.sessions, data.games),
+      this.groups(inRange, data.games),
       q.from,
       q.to,
       tz,
@@ -426,7 +478,8 @@ export class StatsService {
           seconds: cur.seconds + v.seconds,
           estimated: cur.estimated || v.estimated,
         });
-        dayGames.push({ date, titleKey: x.titleKey, seconds: v.seconds });
+        if (v.seconds > 0)
+          dayGames.push({ date, titleKey: x.titleKey, seconds: v.seconds });
       }
     return {
       days: this.dense(total, q.from, q.to, unknown),
@@ -436,6 +489,7 @@ export class StatsService {
           title: x.g.title,
           platforms: [...x.g.platforms],
           seconds: x.seconds,
+          ...artOf(x.titleKey),
           sessionCount: x.g.sessions.length,
           firstPlayedAt: new Date(
             Math.min(...x.g.sessions.map((s) => s.startedAt.getTime())),

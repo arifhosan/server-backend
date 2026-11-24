@@ -58,8 +58,8 @@ with advance warning.
 
 ## 3. Constraints from the existing system
 
-- Repo `ArifHosan/server-backend`, NestJS 12 + TypeORM + MySQL (`api_db` on
-  10.0.1.194). Node 24, ESM. CI builds an ARM64 image to GHCR on push to
+- Repo `ArifHosan/server-backend`, NestJS 12 + TypeORM + MySQL (`api_db` on the
+  database host). Node 24, ESM. CI builds an ARM64 image to GHCR on push to
   `master`; Portainer runs it behind Traefik at `api.server.arifhosan.me`.
 - **Modules must not import each other** (`boundaries/no-cross-module-import`).
   Cross-cutting code goes in `src/common` or `src/database`.

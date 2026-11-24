@@ -2,6 +2,7 @@
 
 mod api;
 mod detect;
+mod icons;
 mod library;
 mod queue;
 mod sender;
@@ -79,7 +80,13 @@ fn apply_paused(app: &AppHandle, paused: bool) -> Res {
         next.save(&config_dir()).map_err(|e| e.to_string())?;
         *s = next;
     }
-    shared.state.lock_ok().paused = paused;
+    {
+        let mut st = shared.state.lock_ok();
+        st.paused = paused;
+        if paused {
+            st.playing.clear(); // pausing stops reporting: nothing is "playing" any more
+        }
+    }
     publish(app);
     Ok(())
 }
@@ -137,6 +144,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
     app.state::<Shared>().state.lock_ok().connection = Connection::Ok { last_sent_at: None };
     publish(&app);
     let _ = app.state::<sender::Wake>().0.send(());
+    let _ = app.state::<sender::StatusWake>().0.send(());
     Ok(())
 }
 
@@ -144,6 +152,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
 fn remove_token(app: AppHandle) -> Res {
     token::clear().map_err(|e| e.to_string())?;
     app.state::<Shared>().state.lock_ok().connection = Connection::NoToken;
+    app.state::<Shared>().state.lock_ok().psn = None;
     publish(&app);
     Ok(())
 }
@@ -199,10 +208,12 @@ fn start_detection(app: AppHandle) {
                         .map(|(g, exe)| {
                             let key = format!("{}:{}", g.store.as_str(), g.store_id.as_deref().unwrap_or(&g.title));
                             let started_at = st.playing.iter().find(|r| r.key == key).map_or(now, |r| r.started_at);
-                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, started_at }
+                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, logo: g.logo, started_at }
                         })
                         .collect();
-                    st.playing = playing;
+                    if !st.paused {
+                        st.playing = playing; // pause may have been hit while scanning
+                    }
                 }
                 publish(&app);
             }
@@ -242,6 +253,7 @@ fn main() {
             });
 
             sender::spawn(app.handle().clone(), config_dir());
+            sender::spawn_status(app.handle().clone());
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", if paused { "Resume" } else { "Pause" }, true, None::<&str>)?;

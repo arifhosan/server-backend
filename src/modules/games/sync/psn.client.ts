@@ -168,6 +168,7 @@ export class PsnClient implements PlatformClient {
             platform: psnPlatform(t.category),
             externalId: t.titleId,
             title: t.name,
+            imageUrl: t.imageUrl || undefined,
             totalSeconds: parseIsoDuration(t.playDuration),
             lastPlayedAt: t.lastPlayedDateTime
               ? new Date(t.lastPlayedDateTime)

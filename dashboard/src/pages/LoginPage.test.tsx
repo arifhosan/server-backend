@@ -21,6 +21,12 @@ function mockBackend(opts: { loginStatus?: number } = {}) {
       return reply(200, { access_token: 't', user: ME });
     }
     if (key === 'POST /api/auth/register') return reply(201, ME);
+    if (key === 'GET /api/games/now') return reply(200, []);
+    if (key === 'GET /api/games/overview')
+      return reply(200, {
+        nowPlaying: [], today: 0, thisWeek: 0, lastWeek: 0, last30Days: [], topGames30d: [],
+        health: { connections: [], devices: [{ id: 1, name: 'PC', lastSeenAt: null }] },
+      });
     return reply(404);
   });
   vi.stubGlobal('fetch', fn);
@@ -118,7 +124,7 @@ describe('LoginPage', () => {
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'password1');
     await user.click(submitBtn('Sign in'));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Overview' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Last 30 days')).toBeTruthy());
   });
 
   it.each(['//evil.example', '/\\evil.com'])('ignores off-site next %s', async (bad) => {
@@ -128,7 +134,7 @@ describe('LoginPage', () => {
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'password1');
     await user.click(submitBtn('Sign in'));
-    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeTruthy();
+    expect(await screen.findByText('Last 30 days')).toBeTruthy();
     expect(screen.getByTestId('path').textContent).toBe('/');
   });
 
