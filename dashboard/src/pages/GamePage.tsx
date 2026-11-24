@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import type { GameDetail, PublicDevice, SessionRow } from '../api/types';
+import type { GameDetail, PublicDevice } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorState } from '../components/ErrorState';
@@ -12,6 +12,7 @@ import { Spinner } from '../components/Spinner';
 import { UndatedNote } from '../components/UndatedNote';
 import { addDays, dayOf, fillDays, relativeDay, shortDay, todayIn } from '../lib/dates';
 import { formatDuration } from '../lib/format';
+import { listable, sessionDay, sessionWhen, sessionWhere } from '../lib/sessions';
 import { PLATFORM_LABEL } from '../lib/sort';
 import { useApi } from '../lib/useApi';
 import '../styles/game.css';
@@ -23,13 +24,6 @@ const RANGES: { id: Range; label: string }[] = [
   { id: '365', label: '1 year' },
   { id: 'all', label: 'All' },
 ];
-
-const SYNC: Record<string, string> = { psn: 'PlayStation sync', steam: 'Steam sync', exophase: 'Exophase sync' };
-
-function sessionWhere(s: SessionRow, devices: Map<number, string>) {
-  if (s.deviceId !== null) return devices.get(s.deviceId) ?? 'Tracker';
-  return SYNC[s.source] ?? 'Tracker';
-}
 
 export function GamePage() {
   const { id } = useParams();
@@ -66,8 +60,8 @@ export function GamePage() {
   if (game.error) return <ErrorState error={game.error} onRetry={game.reload} />;
   if (!g || !chart) return <Spinner />;
 
-  const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' });
-  const time = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+  const sessions = listable(g.sessions);
 
   return (
     <div className="page">
@@ -94,7 +88,7 @@ export function GamePage() {
             </div>
             <div>
               <dt>Sessions in list</dt>
-              <dd>{g.sessions.length}</dd>
+              <dd>{sessions.length}</dd>
             </div>
             <div>
               <dt>Last played</dt>
@@ -137,7 +131,7 @@ export function GamePage() {
 
       <section aria-labelledby="g-sess" className="sessions">
         <h2 id="g-sess">Recent sessions</h2>
-        {g.sessions.length === 0 ? (
+        {sessions.length === 0 ? (
           <EmptyState title="No sessions yet" />
         ) : (
           <table>
@@ -152,14 +146,11 @@ export function GamePage() {
               </tr>
             </thead>
             <tbody>
-              {g.sessions.map((s) => (
+              {sessions.map((s) => (
                 <tr key={s.id}>
-                  <td>{date.format(new Date(s.startedAt))}</td>
-                  <td>
-                    {s.deviceId === null && SYNC[s.source] ? 'during ' : ''}
-                    {time.format(new Date(s.startedAt))} – {time.format(new Date(s.endedAt))}
-                  </td>
-                  <td>{sessionWhere(s, devices)}</td>
+                  <td>{date.format(new Date(`${sessionDay(s, tz)}T00:00:00Z`))}</td>
+                  <td>{sessionWhen(s, tz).label}</td>
+                  <td>{sessionWhere(s, s.deviceId === null ? undefined : (devices.get(s.deviceId) ?? 'Tracker'))}</td>
                   <td className="num">{formatDuration(s.seconds)}</td>
                 </tr>
               ))}

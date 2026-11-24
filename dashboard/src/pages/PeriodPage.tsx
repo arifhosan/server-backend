@@ -10,6 +10,7 @@ import { StackedDayChart, groupGames, OTHER } from '../components/StackedDayChar
 import { UndatedNote } from '../components/UndatedNote';
 import { addDays, daysBetween, fillDays, monthRange, todayIn, weekRange } from '../lib/dates';
 import { formatDuration } from '../lib/format';
+import { listable, sessionDay, sessionWhen } from '../lib/sessions';
 import { useApi } from '../lib/useApi';
 import '../styles/period.css';
 
@@ -48,10 +49,9 @@ function Sessions({ range, period, timeZone }: { range: Range; period: Period; t
   const keyByTitle = new Map(period.games.map((g) => [g.title, g.titleKey]));
   // Prefer the session's own titleKey, then its library row, then its title.
   const keyFor = (r: SessionRow) => r.titleKey ?? keyOf.get(r.libraryGameId) ?? keyByTitle.get(r.title) ?? '';
-  const time = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const byDay = new Map<string, SessionRow[]>();
-  for (const s of [...data].sort((a, b) => b.startedAt.localeCompare(a.startedAt))) {
-    const day = todayIn(timeZone, new Date(s.startedAt));
+  for (const s of listable(data).sort((a, b) => b.endedAt.localeCompare(a.endedAt))) {
+    const day = sessionDay(s, timeZone);
     byDay.set(day, [...(byDay.get(day) ?? []), s]);
   }
   if (!byDay.size) return <EmptyState title="No sessions in this period" />;
@@ -67,7 +67,7 @@ function Sessions({ range, period, timeZone }: { range: Range; period: Period; t
             <div className="sess" key={r.id}>
               <span className="p-dot" aria-hidden="true" style={{ background: colorOf.get(keyFor(r)) ?? OTHER.color }} />
               <span className="name">{r.title}</span>
-              <span className="when">{time.format(new Date(r.startedAt))}</span>
+              <span className="when">{sessionWhen(r, timeZone).label}</span>
               <span className="dur">{formatDuration(r.seconds)}</span>
             </div>
           ))}
