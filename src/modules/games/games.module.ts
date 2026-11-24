@@ -9,6 +9,7 @@ import { DevicesController } from './devices/devices.controller';
 import { DevicesService } from './devices/devices.service';
 import { Connection } from './entities/connection.entity';
 import { Device } from './entities/device.entity';
+import { GameIcon } from './entities/game-icon.entity';
 import { LibraryGame } from './entities/library-game.entity';
 import { PlaySession } from './entities/play-session.entity';
 import { SyncRun } from './entities/sync-run.entity';
@@ -32,6 +33,7 @@ import { loadSecretKey } from './utils/secret-box';
       Connection,
       SyncRun,
       LibraryGame,
+      GameIcon,
       PlaySession,
     ]),
   ],

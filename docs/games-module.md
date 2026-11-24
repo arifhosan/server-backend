@@ -73,14 +73,49 @@ CREATE TABLE play_session (
 );
 ```
 
+Game art (Task 12):
+
+```sql
+ALTER TABLE library_game ADD COLUMN imageUrl VARCHAR(512) NULL;
+CREATE TABLE game_icon (
+  libraryGameId INT NOT NULL PRIMARY KEY,
+  png MEDIUMBLOB NOT NULL,
+  updatedAt DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+);
+```
+
 `legacyRef` (`game:<id>` / `game_old:<id>`) makes the legacy import idempotent.
 
 ## Routes
 
-Authoritative list (README shows the short form). Tasks 9, 10 and 12 add connections, stats and more; keep this section current.
+Authoritative list (README points here). Auth: **JWT** = the cookie or `Authorization: Bearer` access token; **device** = `Authorization: Bearer <device token>`.
 
-- `GET /games/now`, `GET /games/tracker/status`, `POST /games/tracker/heartbeats` (device token)
-- `POST /games/devices`, `GET /games/devices`, `PATCH /games/devices/:id`, `DELETE /games/devices/:id`
+| Method and path | Auth | What it does |
+| --- | --- | --- |
+| `POST /games/devices` | JWT | Create a device; the token is shown once. |
+| `GET /games/devices` | JWT | List the user's devices. |
+| `PATCH /games/devices/:id` | JWT | Rename a device. |
+| `DELETE /games/devices/:id` | JWT | Revoke a device token. |
+| `GET /games/tracker/status` | device | Tracker's view of the PSN connection (`psn: null` or status and expiry). |
+| `POST /games/tracker/heartbeats` | device | Ingest up to 500 heartbeats; returns `{ accepted, rejected }`. |
+| `PUT /games/tracker/icon` | device | Upload a game icon `{ game, png }` (base64 PNG, at most 64 KB decoded); 204. |
+| `GET /games/now` | JWT | Games a tracker reported in the last 2 minutes. |
+| `GET /games/connections` | JWT | Steam and PSN connections with health, never secrets. |
+| `PUT /games/connections/steam` | JWT | Connect Steam by profile URL, vanity name or SteamID64. |
+| `PUT /games/connections/psn` | JWT | Connect PSN with a pasted NPSSO. PSN renewal is the same call repeated with a new NPSSO. |
+| `POST /games/connections/:provider/sync` | JWT | Run a sync now (`steam` or `psn`). |
+| `DELETE /games/connections/:provider` | JWT | Remove a connection and its stored secret. |
+| `GET /games/overview` | JWT | Dashboard home: now playing, today, week, 30-day series, top games, health. |
+| `GET /games/sessions` | JWT | Sessions in a date range, optional game and platform filter. |
+| `GET /games/library` | JWT | Games grouped across platforms, with `platform` and `q` filters. |
+| `GET /games/library/:id` | JWT | One game group with daily series and latest sessions. |
+| `GET /games/library/:id/icon` | JWT | Uploaded PNG icon (`Cache-Control: private, max-age=86400`); 404 if none or not the user's game. |
+| `GET /games/calendar` | JWT | Per-day seconds for a year. |
+| `GET /games/period` | JWT | Per-day and per-game totals for a date range. |
+
+Game objects carry `imageUrl` (Steam CDN or PSN image, or null) and `hasIcon` (a tracker icon exists; fetch it from the icon route).
+
+The icon upload body is JSON: base64 of 64 KB is about 87 KB, under the Express default 100 kb body limit, so no limit was raised. A larger PNG is rejected (400, or 413 beyond 100 kb).
 
 Public host: `games.server.arifhosan.me/api/*` (Traefik strips `/api`).
 

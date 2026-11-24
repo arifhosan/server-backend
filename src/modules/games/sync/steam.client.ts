@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Connection } from '../entities/connection.entity';
+import { steamImageUrl } from '../library/art';
 import {
   ObservedTitle,
   PlatformClient,
@@ -98,6 +99,7 @@ export class SteamClient implements PlatformClient {
         platform: 'steam',
         externalId: String(g.appid),
         title: g.name,
+        imageUrl: steamImageUrl(String(g.appid)),
         totalSeconds: g.playtime_forever * 60,
         lastPlayedAt: g.rtime_last_played
           ? new Date(g.rtime_last_played * 1000)

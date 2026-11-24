@@ -11,7 +11,7 @@ Steam and PSN sync), and a voice assistant backend for a self-built ESP32 speake
 | ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
 | `auth`     | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify` | Registration and JWT issuing/verification. |
 | `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
-| `games`    | `GET /games/now`, `GET /games/tracker/status`, `POST /games/tracker/heartbeats`, `POST/GET /games/devices`, `PATCH/DELETE /games/devices/:id` | Game playtime: tracker heartbeats, device tokens, Steam/PSN sync. Further routes (connections, stats) are added by later tasks; the full list is in [docs/games-module.md](docs/games-module.md). Env: `STEAM_API_KEY`, `GAMES_SECRET_KEY`. |
+| `games`    | 20 routes under `/games/*`: devices, tracker (status, heartbeats, icon), now, connections, stats (overview, sessions, library, calendar, period) | Game playtime and art: tracker heartbeats, device tokens, Steam/PSN sync. Every route with method and auth is listed in [docs/games-module.md](docs/games-module.md#routes). Env: `STEAM_API_KEY`, `GAMES_SECRET_KEY`. |
 | `voice`    | `POST /voice/ota`, `GET /voice/ws`, `GET /voice/client` | ESP32 voice assistant: speech in, speech out. See [docs/voice-protocol.md](docs/voice-protocol.md). |
 | `tokens`   | `GET /tokens/last7`, `POST /tokens` | Claude Code token usage per day for the portfolio. See "Token usage" below. |
 

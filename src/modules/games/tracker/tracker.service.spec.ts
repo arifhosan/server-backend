@@ -1,7 +1,9 @@
+import { BadRequestException } from '@nestjs/common';
 import { DataSource, EntityManager, FindOperator, Repository } from 'typeorm';
 import { HeartbeatDto } from '../dto/heartbeats.dto';
 import { Connection } from '../entities/connection.entity';
 import { Device } from '../entities/device.entity';
+import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { LibraryService } from '../library/library.service';
@@ -9,6 +11,9 @@ import { TrackerService, trackerPlatform } from './tracker.service';
 
 type Row = Record<string, unknown>;
 const op = (v: unknown) => (v as FindOperator<Date>).value;
+
+const PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 describe('TrackerService', () => {
   const now = new Date('2026-11-24T20:00:00Z');
@@ -22,12 +27,14 @@ describe('TrackerService', () => {
   let sessionRows: PlaySession[];
   let connRows: Connection[];
   let deviceRows: Device[];
+  let iconRows: Partial<GameIcon>[];
   let service: TrackerService;
 
   beforeEach(() => {
     gameRows = [];
     sessionRows = [];
     connRows = [];
+    iconRows = [];
     deviceRows = [
       { id: 1, name: 'PC' } as Device,
       { id: 2, name: 'Laptop' } as Device,
@@ -114,6 +121,16 @@ describe('TrackerService', () => {
             ) ?? null,
           ),
       } as unknown as Repository<Connection>,
+      {
+        save: (i: Partial<GameIcon>) => {
+          iconRows = iconRows.filter(
+            (x) => x.libraryGameId !== i.libraryGameId,
+          );
+          iconRows.push(i);
+          return Promise.resolve(i);
+        },
+        find: () => Promise.resolve(iconRows),
+      } as unknown as Repository<GameIcon>,
     );
   });
 
@@ -200,8 +217,47 @@ describe('TrackerService', () => {
         title: 'Hades',
         platform: 'steam',
         startedAt: new Date(now.getTime() - 60_000),
+        imageUrl:
+          'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg',
+        hasIcon: false,
       },
     ]);
+  });
+
+  it('nowPlaying reports an uploaded icon', async () => {
+    await service.ingest(dev(1), [hb(0)], now);
+    await service.saveIcon(7, hb(0).game, PNG);
+    expect((await service.nowPlaying(7, now))[0].hasIcon).toBe(true);
+  });
+
+  describe('saveIcon', () => {
+    const game = hb(0).game;
+    it('stores a PNG for the heartbeat-resolved game', async () => {
+      await service.saveIcon(7, game, PNG);
+      expect(gameRows).toHaveLength(1);
+      expect(iconRows).toEqual([
+        { libraryGameId: gameRows[0].id, png: Buffer.from(PNG, 'base64') },
+      ]);
+    });
+
+    it('rejects more than 64 KB', async () => {
+      const big = Buffer.concat([
+        Buffer.from(PNG, 'base64'),
+        Buffer.alloc(70_000 - 70),
+      ]);
+      expect(big.length).toBe(70_000);
+      await expect(
+        service.saveIcon(7, game, big.toString('base64')),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(iconRows).toHaveLength(0);
+    });
+
+    it('rejects a non-PNG', async () => {
+      const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
+      await expect(
+        service.saveIcon(7, game, jpeg.toString('base64')),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   it('status is null psn without a connection and never leaks the secret', async () => {
