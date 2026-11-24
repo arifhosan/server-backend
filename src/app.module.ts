@@ -10,6 +10,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { RadioModule } from './modules/radio/radio.module';
 import { VoiceModule } from './modules/voice/voice.module';
 import { TokensModule } from './modules/tokens/tokens.module';
+import { GamesModule } from './modules/games/games.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { TokensModule } from './modules/tokens/tokens.module';
     RadioModule,
     VoiceModule,
     TokensModule,
+    GamesModule,
   ],
   controllers: [AppController, HaController],
   providers: [AppService],
