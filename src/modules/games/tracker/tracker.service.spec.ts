@@ -241,6 +241,26 @@ describe('TrackerService', () => {
     });
   });
 
+  it('nowPlaying falls back to art of the same title on another platform', async () => {
+    await service.ingest(dev(1), [hb(0)], now); // Hades on Steam, with the Steam header
+    gameRows.push({
+      id: 2,
+      userId: 7,
+      platform: 'epic',
+      externalId: 'folder:hades',
+      title: 'Hades',
+      titleKey: gameRows[0].titleKey,
+      imageUrl: null,
+    } as LibraryGame);
+    sessionRows[0].libraryGameId = 2; // playing the Epic copy
+    expect((await service.nowPlaying(7, now))[0]).toMatchObject({
+      libraryGameId: 2,
+      platform: 'epic',
+      imageUrl:
+        'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg',
+    });
+  });
+
   describe('Steam legacy adoption before the first Steam sync (I1)', () => {
     const legacy = (o: Partial<LibraryGame> = {}) =>
       gameRows.push({

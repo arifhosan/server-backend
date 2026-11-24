@@ -24,6 +24,7 @@ import { PlaySession } from '../entities/play-session.entity';
 import { SyncRun } from '../entities/sync-run.entity';
 import { GAMES_SECRET_KEY, SYNC_CLIENTS } from '../games.constants';
 import { ConnectionStatus, Provider } from '../games.types';
+import { fillMissingArt } from '../library/art-lookup';
 import { LibraryService } from '../library/library.service';
 import { openSecret, sealSecret } from '../utils/secret-box';
 import { titleKey } from '../utils/title-key';
@@ -82,6 +83,12 @@ export class SyncService {
         // Only HttpExceptions (lock/disabled/not found) reach here; their text is fixed.
         this.logger.warn(`sync ${c.id} skipped: ${(e as Error).message}`);
       }
+    }
+    try {
+      const found = await fillMissingArt(this.dataSource.manager, new Date());
+      if (found) this.logger.log(`art found for ${found} games`);
+    } catch (e) {
+      this.logger.warn(`art lookup failed: ${(e as Error).name}`);
     }
   }
 

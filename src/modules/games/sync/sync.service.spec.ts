@@ -5,6 +5,7 @@ import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { SyncRun } from '../entities/sync-run.entity';
+import { fillMissingArt } from '../library/art-lookup';
 import { LibraryService } from '../library/library.service';
 import { sealSecret } from '../utils/secret-box';
 import { titleKey } from '../utils/title-key';
@@ -15,6 +16,11 @@ import {
   SyncFailedError,
 } from './platform-client';
 import { SyncService } from './sync.service';
+
+// The art lookup calls the Steam store; it has its own spec.
+jest.mock('../library/art-lookup', () => ({
+  fillMissingArt: jest.fn().mockResolvedValue(0),
+}));
 
 type Row = Record<string, unknown>;
 const op = (v: unknown) => v as FindOperator<unknown>;
@@ -182,6 +188,7 @@ describe('SyncService', () => {
     const get = <T>(e: unknown) => repos.get(e) as T;
     const manager = { getRepository: (e: unknown) => get(e) };
     const ds = {
+      manager,
       transaction: (cb: (m: unknown) => Promise<void>) => cb(manager),
     } as unknown as DataSource;
     service = new SyncService(
@@ -980,6 +987,20 @@ describe('SyncService', () => {
     expect(c.secret).not.toContain('new');
     expect(c.secretExpiresAt).toBe(exp);
     expect(c.status).toBe('expiring');
+  });
+
+  it('syncAll looks for missing art after the syncs, and survives its failure', async () => {
+    const fill = jest.mocked(fillMissingArt);
+    fill.mockClear();
+    await service.syncAll();
+    expect(fill).toHaveBeenCalledTimes(1);
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    fill.mockRejectedValueOnce(new Error('store down'));
+    await expect(service.syncAll()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('art lookup failed: Error');
+    warn.mockRestore();
   });
 
   it('syncAll deletes sync runs older than 90 days', async () => {

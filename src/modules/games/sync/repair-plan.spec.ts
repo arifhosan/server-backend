@@ -233,6 +233,29 @@ describe('planRepairs', () => {
         { kind: 'keep', id: yt.id, why: 'app' },
       ]);
     });
+
+    it('production: Netflix CUSA00127 (205.0 h) and Prime Video PPSA01615 (3.4 h), no sessions, are deleted', () => {
+      const netflix = row({
+        title: 'Netflix',
+        platform: 'ps4',
+        externalId: 'CUSA00127_00',
+        totalSeconds: h(205),
+      });
+      const prime = row({
+        title: 'Prime Video',
+        externalId: 'PPSA01615_00',
+        totalSeconds: h(3.4),
+      });
+      const first = planRepairs('psn', [netflix, prime], []);
+      expect(first.actions).toEqual([
+        { kind: 'delete', id: netflix.id, why: 'app' },
+        { kind: 'delete', id: prime.id, why: 'app' },
+      ]);
+      // The client no longer sends them, so nothing recreates them.
+      expect(
+        planRepairs('psn', apply([netflix, prime], first.actions), []).actions,
+      ).toEqual([]);
+    });
   });
 
   describe('legacy rows fold into synced rows', () => {

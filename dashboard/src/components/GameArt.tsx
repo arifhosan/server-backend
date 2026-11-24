@@ -13,18 +13,23 @@ interface Props {
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-/** Cover image, else the game's icon, else an initials tile. A failed image falls back to the tile. */
+/** "Tom Clancy's Rainbow Six" -> "TC"; one word -> its first two letters; none -> "?". */
+export function initials(title: string): string {
+  const [first = '?', second] = title.match(/[\p{L}\p{N}]+/gu) ?? [];
+  return (second ? first.charAt(0) + second.charAt(0) : first.slice(0, 2)).toUpperCase();
+}
+
+/** Cover image, else the game's icon, else an initials tile. A failing image (404) falls through to the next. */
 export function GameArt({ imageUrl, hasIcon, libraryGameId, iconLibraryGameId, title, size = 'md' }: Props) {
-  const [failed, setFailed] = useState(false);
-  const src = imageUrl ?? (hasIcon ? `/api/games/library/${iconLibraryGameId ?? libraryGameId}/icon` : null);
+  const [failed, setFailed] = useState<string[]>([]);
+  const icon = hasIcon ? `/api/games/library/${iconLibraryGameId ?? libraryGameId}/icon` : null;
+  const src = [imageUrl, icon].find((u): u is string => !!u && !failed.includes(u));
   const cls = `art art-${size}`;
-  if (src && !failed) return <img className={cls} src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
-  const words = title.split(/\s+/).filter(Boolean);
-  const initials = (words.length > 1 ? words[0][0] + words[1][0] : title.slice(0, 2)).toUpperCase();
+  if (src) return <img className={cls} src={src} alt="" loading="lazy" onError={() => setFailed((f) => [...f, src])} />;
   const hash = [...title].reduce((h, c) => h + c.charCodeAt(0), 0);
   return (
     <span className={`${cls} art-tile`} aria-hidden="true" style={{ background: TILES[hash % TILES.length] }}>
-      {initials}
+      {initials(title)}
     </span>
   );
 }

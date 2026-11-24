@@ -209,11 +209,20 @@ export class TrackerService {
         where: { id: In(active.map((s) => s.deviceId as number)) },
       }),
     ]);
+    // Art falls back across the group's platform rows (same titleKey), as in the library.
+    const keys = [...new Set(games.map((g) => g.titleKey).filter(Boolean))];
+    const kin = keys.length
+      ? await this.games.find({ where: { userId, titleKey: In(keys) } })
+      : [];
+    const members = (g: LibraryGame) =>
+      g.titleKey ? kin.filter((k) => k.titleKey === g.titleKey) : [g];
     const iconIds = new Set(
       (
         await this.icons.find({
           select: { libraryGameId: true },
-          where: { libraryGameId: In(games.map((g) => g.id)) },
+          where: {
+            libraryGameId: In([...games, ...kin].map((g) => g.id)),
+          },
         })
       ).map((i) => i.libraryGameId),
     );
@@ -229,7 +238,7 @@ export class TrackerService {
           title: g.title,
           platform: g.platform,
           startedAt: s.startedAt,
-          ...pickArt([g], iconIds),
+          ...pickArt(members(g).length ? members(g) : [g], iconIds),
         },
       ];
     });

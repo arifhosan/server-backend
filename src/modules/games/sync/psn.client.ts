@@ -100,6 +100,13 @@ export function isKnownPsnApp(name: string): boolean {
   return PSN_APPS.has(titleKey(name));
 }
 
+/**
+ * A PlayStation library row for a media app. The sync repair deletes those without sessions;
+ * ones holding (legacy) sessions are kept, so no data is lost, and stats hide them.
+ */
+export const isPsnMediaApp = (g: { platform: Platform; title: string }) =>
+  (g.platform === 'ps4' || g.platform === 'ps5') && isKnownPsnApp(g.title);
+
 /** Media apps (Netflix, ...) show up among played games; they are not games. */
 export function isPsnGame(
   titleId: string,

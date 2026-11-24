@@ -92,6 +92,17 @@ span a sync.
 ALTER TABLE library_game ADD COLUMN trackerCreditSeconds INT NOT NULL DEFAULT 0;
 ```
 
+Missing art: after the hourly syncs, up to 20 games whose whole group (same
+titleKey) has no image and no icon get a Steam store search
+(`library/art-lookup.ts`, no key). A result is taken only when its name matches
+(same titleKey after stripping "for Windows 10", "PC", "Xbox Series X|S", or
+same numbers and word Jaccard >= 0.8); its header image becomes `imageUrl`. A
+miss is remembered for 30 days:
+
+```sql
+ALTER TABLE library_game ADD COLUMN artCheckedAt DATETIME(6) NULL;
+```
+
 `legacyRef` (`game:<id>` / `game_old:<id>`) makes the legacy import idempotent.
 
 ## Routes

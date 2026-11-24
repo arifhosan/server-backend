@@ -349,6 +349,38 @@ describe('StatsService', () => {
     });
   });
 
+  it('hides a media app row kept for its legacy sessions from every view', async () => {
+    game({ id: 7, platform: 'ps4', title: 'Netflix', totalSeconds: 738_000 });
+    sessions.push({
+      id: nid++,
+      userId: 1,
+      libraryGameId: 7,
+      source: 'exophase',
+      deviceId: null,
+      legacyRef: 'game:1',
+      startedAt: new Date('2026-11-23T10:00:00Z'),
+      endedAt: new Date('2026-11-23T12:00:00Z'),
+      seconds: 7200,
+    });
+    sess(3, 'tracker', '2026-11-23T08:00:00Z', '2026-11-23T09:00:00Z', 3600);
+    const lib = await service.library(1, {});
+    expect(lib.some((e) => e.title === 'Netflix')).toBe(false);
+    const p = await service.period(1, { from: '2026-11-23', to: '2026-11-23' });
+    expect(p.games.map((g) => g.title)).toEqual(['Tracker Only']);
+    expect(p.days[0].seconds).toBe(3600);
+    const o = await service.overview(1, now);
+    expect(o.topGames30d.map((g) => g.title)).toEqual(['Tracker Only']);
+    const list = await service.sessions(1, {
+      from: '2026-11-23',
+      to: '2026-11-23',
+    });
+    expect(list.map((x) => x.libraryGameId)).toEqual([3]);
+    await expect(service.game(1, 7)).rejects.toThrow(NotFoundException);
+    // Hidden, not deleted.
+    expect(games.some((g) => g.id === 7)).toBe(true);
+    expect(sessions.some((x) => x.libraryGameId === 7)).toBe(true);
+  });
+
   it('rejects ranges over 366 days and bad dates', async () => {
     await expect(
       service.period(1, { from: '2025-01-01', to: '2026-01-02' }),

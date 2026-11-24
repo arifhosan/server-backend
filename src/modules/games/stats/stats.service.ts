@@ -19,6 +19,7 @@ import {
   TOTAL_EXCLUDED_SOURCES,
 } from '../games.types';
 import { Art, pickArt, primaryId } from '../library/art';
+import { isPsnMediaApp } from '../sync/psn.client';
 import { TrackerService } from '../tracker/tracker.service';
 import {
   addDays,
@@ -137,6 +138,13 @@ export class StatsService {
     return icon.png;
   }
 
+  /** The user's games, without media apps (Netflix, ...): every view reads them through here. */
+  private async userGames(userId: number): Promise<LibraryGame[]> {
+    return (await this.games.find({ where: { userId } })).filter(
+      (g) => !isPsnMediaApp(g),
+    );
+  }
+
   private async timeZone(userId: number): Promise<string> {
     // `user` belongs to the auth module: read the one column directly.
     const rows: { timezone?: string }[] = await this.dataSource.query(
@@ -168,7 +176,7 @@ export class StatsService {
           endedAt: MoreThan(localMidnight(from, tz)),
         },
       }),
-      this.games.find({ where: { userId } }),
+      this.userGames(userId),
     ]);
     const byId = new Map(games.map((g) => [g.id, g]));
     const sessions = rows
@@ -435,7 +443,7 @@ export class StatsService {
     q: { platform?: Platform; q?: string },
   ): Promise<LibraryEntry[]> {
     const needle = q.q?.trim().toLowerCase();
-    const games = (await this.games.find({ where: { userId } })).filter(
+    const games = (await this.userGames(userId)).filter(
       (g) =>
         (!q.platform || g.platform === q.platform) &&
         (!needle || g.title.toLowerCase().includes(needle)),
@@ -447,7 +455,7 @@ export class StatsService {
   }
 
   async game(userId: number, id: number): Promise<GameDetail> {
-    const all = await this.games.find({ where: { userId } });
+    const all = await this.userGames(userId);
     const g = all.find((x) => x.id === id);
     if (!g) throw new NotFoundException('Game not found');
     const members = all.filter((x) => groupKey(x) === groupKey(g));

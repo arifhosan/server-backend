@@ -24,14 +24,20 @@ const STOP_WORDS = new Set([
 const words = (key: string) => key.split(' ').filter(Boolean);
 const numbers = (key: string) => words(key).filter((w) => /^\d+$/.test(w));
 
+/** Jaccard similarity of the two keys' word sets (0 when either is empty). */
+export function jaccard(a: string, b: string): number {
+  const A = new Set(words(a));
+  const B = new Set(words(b));
+  const common = [...A].filter((w) => B.has(w)).length;
+  const union = A.size + B.size - common;
+  return union ? common / union : 0;
+}
+
 /** Non-empty keys where one holds the other as whole words, or word-set Jaccard >= 0.5. */
 export function similarTitles(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `)) return true;
-  const A = new Set(words(a));
-  const B = new Set(words(b));
-  const common = [...A].filter((w) => B.has(w)).length;
-  return common / (A.size + B.size - common) >= 0.5;
+  return jaccard(a, b) >= 0.5;
 }
 
 /** "Far Cry 6" is not "Far Cry 5": numeric tokens, when either title has any, must be the same set. */
