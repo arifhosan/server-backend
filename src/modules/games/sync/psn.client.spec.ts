@@ -84,21 +84,21 @@ describe('helpers', () => {
     expect(psnPlatformFromTitle('NPWR12345_00', 'ps4_game')).toBe('ps4');
     expect(psnPlatformFromTitle('XYZ', 'pspc_game')).toBe('ps5');
   });
-  it('isPsnGame keeps games and drops media apps', () => {
-    expect(isPsnGame('CUSA1_00', 'ps4_game', 'God of War')).toBe(true);
-    expect(isPsnGame('PPSA1_00', 'ps5_native_game', 'Astro Bot')).toBe(true);
-    expect(isPsnGame('PPSA1_00', 'pspc_game', 'Astro Bot')).toBe(true);
+  it('isPsnGame drops a title only on an explicit app signal', () => {
+    expect(isPsnGame('ps4_game', 'God of War')).toBe(true);
+    expect(isPsnGame('ps5_native_game', 'Astro Bot')).toBe(true);
+    expect(isPsnGame('pspc_game', 'Astro Bot')).toBe(true);
     for (const c of [
       'ps4_nongame_mini_app',
       'ps5_native_media_app',
       'ps4_videoservice_web_app',
       'ps5_web_based_media_app',
     ])
-      expect(isPsnGame('CUSA1_00', c, 'Some App')).toBe(false);
-    // Unknown category: only a CUSA/PPSA id that is not a known app.
-    expect(isPsnGame('CUSA1_00', 'unknown', 'Bloodborne')).toBe(true);
-    expect(isPsnGame('PPSA1_00', '', 'Bloodborne')).toBe(true);
-    expect(isPsnGame('NPXX1_00', 'unknown', 'Bloodborne')).toBe(false);
+      expect(isPsnGame(c, 'Some App')).toBe(false);
+    // Unknown or new categories stay synced, whatever the id looks like.
+    expect(isPsnGame('unknown', 'Bloodborne')).toBe(true);
+    expect(isPsnGame('', 'Bloodborne')).toBe(true);
+    expect(isPsnGame('ps6_game', 'Bloodborne')).toBe(true);
     for (const app of [
       'Netflix',
       'YouTube',
@@ -111,12 +111,10 @@ describe('helpers', () => {
       'Crunchyroll',
       'Media Player',
     ])
-      expect(isPsnGame('CUSA1_00', 'unknown', app)).toBe(false);
+      expect(isPsnGame('unknown', app)).toBe(false);
     // Known app names are matched whole, even under a game category.
-    expect(isPsnGame('CUSA1_00', 'ps4_game', 'Netflix')).toBe(false);
-    expect(
-      isPsnGame('PPSA1_00', 'ps5_native_game', 'Disney Dreamlight Valley'),
-    ).toBe(true);
+    expect(isPsnGame('ps4_game', 'Netflix')).toBe(false);
+    expect(isPsnGame('ps5_native_game', 'Disney Dreamlight Valley')).toBe(true);
   });
   it('psnStatus', () => {
     const now = new Date('2026-11-24T00:00:00Z');
@@ -394,6 +392,25 @@ describe('PsnClient', () => {
       expect.objectContaining({ platform: 'ps4', externalId: 'CUSA18278_00' }),
     ]);
     expect(r.ignoredIds).toEqual(['CUSA00127_00', 'PPSA02222_00']);
+  });
+
+  it('an unknown category with a non-CUSA/PPSA id is synced (category fallback), not ignored', async () => {
+    mPlayed.mockResolvedValue({
+      totalItemCount: 1,
+      titles: [
+        {
+          ...title(1),
+          titleId: 'NPWR12345_00',
+          name: 'Old Game',
+          category: 'unknown',
+        },
+      ],
+    } as never);
+    const r = await client.fetchTitles(conn, secret());
+    expect(r.titles).toEqual([
+      expect.objectContaining({ platform: 'ps5', externalId: 'NPWR12345_00' }),
+    ]);
+    expect(r.ignoredIds).toEqual([]);
   });
 
   it('wraps psn-api errors in SyncFailedError without tokens', async () => {

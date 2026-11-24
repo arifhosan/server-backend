@@ -1,7 +1,11 @@
 import { Injectable, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { DatabaseModule } from '../../../database/database.module';
+import { GameIcon } from '../entities/game-icon.entity';
+import { LibraryGame } from '../entities/library-game.entity';
+import { PlaySession } from '../entities/play-session.entity';
 import {
   Platform,
   Provider,
@@ -10,6 +14,7 @@ import {
 } from '../games.types';
 import type { ObservedTitle } from '../sync/platform-client';
 import { isKnownPsnApp, psnTitlePlatform } from '../sync/psn.client';
+import { RepairPlan, applyRepairs } from '../sync/repair-apply';
 import {
   RepairAction,
   lastLegacyScrape,
@@ -17,6 +22,7 @@ import {
   planSessionRepairs,
   sessionCounts,
 } from '../sync/repair-plan';
+import { isNoise } from '../stats/undated';
 import { titleKey } from '../utils/title-key';
 
 export interface AuditGame {
@@ -49,9 +55,10 @@ const familyOf = (p: Platform) =>
   p === 'ps4' || p === 'ps5' ? 'psn' : p === 'steam' ? 'steam' : undefined;
 
 /**
- * What the next syncs' repairs would do, from the stored rows alone: the reported totals are the
- * rows' own (the audit never calls PSN or Steam; a PSN refresh would rotate the stored tokens).
- * Totals in hours; a library total is the reported one, else the session sum (as the dashboard).
+ * The full repair plan (legacy folds by R1-R4, which the hourly sync never runs beyond R1) from
+ * the stored rows alone: the reported totals are the rows' own (the audit never calls PSN or
+ * Steam; a PSN refresh would rotate the stored tokens). Returns the plan and a report of it in
+ * hours; a library total is the reported one, else the session sum (as the dashboard).
  */
 export function buildAudit(input: AuditInput) {
   const rekey = input.games
@@ -64,12 +71,8 @@ export function buildAudit(input: AuditInput) {
   const byId = new Map(games.map((g) => [g.id, g]));
   const scrapeAt = lastLegacyScrape(input.sessions);
   const sessionRepairs = planSessionRepairs(input.sessions, scrapeAt);
-  const deletedSessions = new Set(
-    sessionRepairs.flatMap((r) => (r.kind === 'deleteSession' ? [r.id] : [])),
-  );
-  const counts = sessionCounts(
-    input.sessions.filter((s) => !deletedSessions.has(s.id)),
-  );
+  const hidden = input.sessions.filter(isNoise);
+  const counts = sessionCounts(input.sessions);
   const rows = games.map((g) => ({ ...g, sessions: counts.get(g.id) ?? 0 }));
   const observed = (provider: Provider): ObservedTitle[] =>
     games
@@ -87,7 +90,7 @@ export function buildAudit(input: AuditInput) {
         totalSeconds: g.totalSeconds as number,
       }));
   const actions: RepairAction[] = input.providers.flatMap(
-    (p) => planRepairs(p, rows, observed(p)).actions,
+    (p) => planRepairs(p, rows, observed(p), [], 'all').actions,
   );
 
   const sums = new Map<number, number>();
@@ -146,7 +149,12 @@ export function buildAudit(input: AuditInput) {
     actions.flatMap((a) => (a.kind === 'foldLegacy' ? [a.legacyId] : [])),
   );
 
-  return {
+  const plan: RepairPlan = {
+    rekey: rekey.map((r) => ({ id: r.id, to: r.to })),
+    sessionRepairs,
+    actions,
+  };
+  const report = {
     totalsHours: {
       old: sum((g) => g.old),
       now: sum((g) => g.now),
@@ -184,14 +192,10 @@ export function buildAudit(input: AuditInput) {
     rekey,
     noiseSessions: {
       lastLegacyScrapeAt: scrapeAt,
-      deleteCount: deletedSessions.size,
-      deleteHours: hours(
-        sessionRepairs.reduce(
-          (a, r) => a + (r.kind === 'deleteSession' ? r.seconds : 0),
-          0,
-        ),
-      ),
-      rewindowCount: sessionRepairs.length - deletedSessions.size,
+      /** PSN/Steam under 5 min: kept in the table, hidden by every stats read. */
+      hiddenCount: hidden.length,
+      hiddenHours: hours(hidden.reduce((a, x) => a + Number(x.seconds), 0)),
+      rewindowCount: sessionRepairs.length,
       repairs: sessionRepairs,
     },
     groups: [...groups]
@@ -205,16 +209,29 @@ export function buildAudit(input: AuditInput) {
       }))
       .sort((a, b) => b.nowHours - b.oldHours - (a.nowHours - a.oldHours)),
   };
+  return { report, plan };
 }
 
 @Injectable()
 export class LibraryAuditService {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Read-only: SELECTs only. */
-  async run(userId: number) {
+  /**
+   * Without `apply`: SELECTs only. With `apply`: the same plan, written in one transaction (all
+   * or nothing), after a review of the dry run.
+   */
+  async run(userId: number, opts: { apply?: boolean } = {}) {
+    if (!opts.apply) return (await this.plan(this.dataSource, userId)).report;
+    return this.dataSource.transaction(async (m) => {
+      const { report, plan } = await this.plan(m, userId);
+      await applyRepairs(m, plan);
+      return { ...report, applied: true };
+    });
+  }
+
+  private async plan(db: DataSource | EntityManager, userId: number) {
     const q = <T>(sql: string, params: unknown[] = []) =>
-      this.dataSource.query<T[]>(sql, params);
+      db.query<T[]>(sql, params);
     const games = await q<AuditGame>(
       'SELECT id, platform, externalId, title, titleKey, totalSeconds FROM library_game WHERE userId = ?',
       [userId],
@@ -250,7 +267,12 @@ export class LibraryAuditService {
 
 /** Minimal module for the run-audit CLI: no HTTP server, cron or sync clients. */
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    DatabaseModule,
+    // Entity metadata for --apply (autoLoadEntities).
+    TypeOrmModule.forFeature([LibraryGame, PlaySession, GameIcon]),
+  ],
   providers: [LibraryAuditService],
 })
 export class LibraryAuditCliModule {}

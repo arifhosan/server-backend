@@ -49,9 +49,12 @@ export interface RepairSession {
   seconds: number;
 }
 
-export type SessionRepair =
-  | { kind: 'deleteSession'; id: number; seconds: number }
-  | { kind: 'rewindow'; id: number; startedAt: Date; source: SessionSource };
+export interface SessionRepair {
+  kind: 'rewindow';
+  id: number;
+  startedAt: Date;
+  source: SessionSource;
+}
 
 /** End of the newest `exophase` session: the legacy totals are current as of then. */
 export function lastLegacyScrape(
@@ -65,9 +68,9 @@ export function lastLegacyScrape(
 }
 
 /**
- * First-sync noise: Steam/PSN sessions windowed from before the last legacy scrape. Under 5 min
- * they are deleted; the rest start at the scrape instead (seconds unchanged; an `import` if they
- * no longer fit the window, as `decideDelta` would have made them). Idempotent.
+ * First-sync sessions windowed from before the last legacy scrape: they start at the scrape
+ * instead (seconds unchanged; an `import` if they no longer fit, as `decideDelta` would have made
+ * them). Nothing is deleted: short ones are hidden by the stats noise filter. Idempotent.
  */
 export function planSessionRepairs(
   sessions: RepairSession[],
@@ -79,9 +82,7 @@ export function planSessionRepairs(
     const ended = new Date(s.endedAt);
     if (s.source !== 'steam' && s.source !== 'psn') continue;
     if (!(new Date(s.startedAt) < scrapeAt)) continue;
-    if (s.seconds < MIN_SESSION_SECONDS)
-      out.push({ kind: 'deleteSession', id: s.id, seconds: s.seconds });
-    else if (ended > scrapeAt)
+    if (ended > scrapeAt)
       out.push({
         kind: 'rewindow',
         id: s.id,
@@ -155,6 +156,8 @@ export function planRepairs(
   rows: RepairRow[],
   titles: ObservedTitle[],
   ignoredIds: string[] = [],
+  /** 'sync': legacy folds by R1 only (the hourly repair); 'all': R1-R4 (reviewed audit --apply). */
+  rules: 'sync' | 'all' = 'sync',
 ): { titles: ObservedTitle[]; actions: RepairAction[] } {
   const psn = provider === 'psn';
   const family: Platform[] = psn ? ['ps4', 'ps5'] : ['steam'];
@@ -245,6 +248,7 @@ export function planRepairs(
         total: l.totalSeconds!,
       },
       synced,
+      rules === 'sync',
     );
     if (m)
       actions.push({

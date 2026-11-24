@@ -32,9 +32,14 @@ export function decideDelta(i: DeltaInput): DeltaResult {
     i.notBefore && i.notBefore > from
       ? new Date(Math.min(i.notBefore.getTime(), i.now.getTime()))
       : from;
+  // End where play ended, but only when the delta fits before that; else the sync time.
+  const played = i.lastPlayedAt;
   const endedAt =
-    i.lastPlayedAt && i.lastPlayedAt > startedAt && i.lastPlayedAt < i.now
-      ? i.lastPlayedAt
+    played &&
+    played > startedAt &&
+    played < i.now &&
+    delta <= (played.getTime() - startedAt.getTime()) / 1000
+      ? played
       : i.now;
   const span = { startedAt, endedAt };
   if (delta > (endedAt.getTime() - startedAt.getTime()) / 1000) {

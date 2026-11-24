@@ -1,16 +1,22 @@
 import { NestFactory } from '@nestjs/core';
 import { LibraryAuditCliModule, LibraryAuditService } from './library-audit';
 
-/** node dist/modules/games/library/run-audit.js --user-id <id>  (read-only dry run of the sync repairs) */
+/**
+ * node dist/modules/games/library/run-audit.js --user-id <id> [--apply]
+ * Read-only dry run of the full library repair (legacy folds R1-R4 included); --apply writes
+ * that plan in one transaction. Review the dry run first.
+ */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const i = args.indexOf('--user-id');
   const userId = i >= 0 ? Number(args[i + 1]) : NaN;
   if (!Number.isInteger(userId) || userId < 1)
-    throw new Error('usage: run-audit --user-id <id>');
+    throw new Error('usage: run-audit --user-id <id> [--apply]');
   const app = await NestFactory.createApplicationContext(LibraryAuditCliModule);
   try {
-    const report = await app.get(LibraryAuditService).run(userId);
+    const report = await app
+      .get(LibraryAuditService)
+      .run(userId, { apply: args.includes('--apply') });
     console.log(JSON.stringify(report, null, 2));
   } finally {
     await app.close();

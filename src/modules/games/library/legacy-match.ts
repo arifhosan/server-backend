@@ -64,10 +64,13 @@ export const tolerance = (legacyTotal: number) =>
  *    the closest; a tie matches nothing.
  * R3 exactly one synced row within 60 s that shares a significant word (numbers may differ).
  * R4 the synced rows with the legacy titleKey (2+) sum to within tol: the largest of them.
+ * `onlyR1`: R2-R4 compare a fixed legacy total with live totals that keep growing, so sooner or
+ * later a similar game passes through their window; only a reviewed one-shot may use them.
  */
 export function matchLegacy(
   legacy: MatchRow,
   synced: MatchRow[],
+  onlyR1 = false,
 ): { into: MatchRow; rule: MatchRule } | undefined {
   const L = legacy;
   const tol = tolerance(L.total);
@@ -86,6 +89,7 @@ export function matchLegacy(
       );
     if (r1) return { into: r1, rule: 'R1' };
   }
+  if (onlyR1) return undefined;
 
   const r2 = above
     .filter(

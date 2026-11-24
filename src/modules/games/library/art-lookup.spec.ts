@@ -145,7 +145,8 @@ describe('fillMissingArt', () => {
     expect(rows[6].artCheckedAt).toEqual(now);
   });
 
-  it('at most 20 lookups per run; a failed request is not stamped', async () => {
+  it('at most 20 lookups per run; a failed request retries after a day, not every run', async () => {
+    row(100, '原神'); // no search key: never looked up, takes no slot
     for (let i = 1; i <= 25; i++) row(i, `Game ${i}`);
     const search = jest.fn((term: string) =>
       term === 'game 1'
@@ -154,8 +155,36 @@ describe('fillMissingArt', () => {
     );
     await fillMissingArt(manager(), now, search);
     expect(search).toHaveBeenCalledTimes(20);
-    expect(rows[0].artCheckedAt).toBeNull();
-    expect(rows[1].artCheckedAt).toEqual(now);
-    expect(rows[24].artCheckedAt).toBeNull();
+    expect(search).not.toHaveBeenCalledWith('');
+    const byId = (id: number) => rows.find((r) => r.id === id)!;
+    expect(byId(1).artCheckedAt).toEqual(
+      new Date(now.getTime() - 29 * 86_400_000),
+    );
+    expect(byId(2).artCheckedAt).toEqual(now);
+    expect(byId(25).artCheckedAt).toBeNull();
+    expect(byId(100).artCheckedAt).toBeNull();
+
+    // Next hour: the failed group waits, the rest get their turn.
+    search.mockClear();
+    await fillMissingArt(
+      manager(),
+      new Date(now.getTime() + 3_600_000),
+      search,
+    );
+    expect(search.mock.calls.map((c) => c[0])).toEqual([
+      'game 21',
+      'game 22',
+      'game 23',
+      'game 24',
+      'game 25',
+    ]);
+    // A day later it is tried again.
+    search.mockClear();
+    await fillMissingArt(
+      manager(),
+      new Date(now.getTime() + 86_400_001),
+      search,
+    );
+    expect(search).toHaveBeenCalledWith('game 1');
   });
 });

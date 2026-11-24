@@ -76,13 +76,32 @@ describe('decideDelta', () => {
       new Date('2026-11-25T00:00:00Z'),
     ])
       expect(r(x)?.endedAt).toEqual(now18);
-    // Seconds that no longer fit the shortened window: an import.
+    // A delta that does not fit before lastPlayedAt keeps the sync time (no import).
     const tight = new Date(scrape.getTime() + 3600_000);
     expect(r(tight)).toEqual({
-      source: 'import',
+      source: 'platform',
       seconds: 7200,
       startedAt: scrape,
-      endedAt: tight,
+      endedAt: now18,
+    });
+  });
+
+  it('straddle: last sync 10:05, played 10:20-11:00 (lastPlayedAt 10:20) ends at now', () => {
+    const at = (hm: string) => new Date(`2026-11-24T${hm}:00Z`);
+    expect(
+      decideDelta({
+        priorSeconds: 1000,
+        priorChangedAt: null,
+        windowStart: at('10:05'),
+        now: at('11:05'),
+        reportedSeconds: 1000 + 2400,
+        lastPlayedAt: at('10:20'),
+      }).session,
+    ).toEqual({
+      source: 'platform',
+      seconds: 2400,
+      startedAt: at('10:05'),
+      endedAt: at('11:05'),
     });
   });
 

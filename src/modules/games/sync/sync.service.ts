@@ -18,7 +18,6 @@ import {
   Repository,
 } from 'typeorm';
 import { Connection } from '../entities/connection.entity';
-import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { SyncRun } from '../entities/sync-run.entity';
@@ -35,9 +34,9 @@ import {
   SecretExpiredError,
   SyncFailedError,
 } from './platform-client';
+import { applyRepairs } from './repair-apply';
 import {
   MIN_SESSION_SECONDS,
-  RepairAction,
   lastLegacyScrape,
   planRepairs,
   planSessionRepairs,
@@ -51,6 +50,7 @@ export class SyncService {
   private readonly logger = new Logger(SyncService.name);
   // ponytail: in-process lock; move to a DB lock if the backend ever runs >1 replica
   private readonly running = new Set<number>();
+  private readonly keptLogged = new Set<number>();
 
   constructor(
     @InjectRepository(Connection)
@@ -197,20 +197,16 @@ export class SyncService {
     titles: ObservedTitle[],
     ignoredIds: string[] = [],
   ): Promise<{ titles: ObservedTitle[]; scrapeAt: Date | null }> {
-    const games = m.getRepository(LibraryGame);
-    const rows = await games.find({ where: { userId: conn.userId } });
-    let rekeyed = 0;
-    for (const g of rows) {
-      const key = titleKey(g.title);
-      if (key === g.titleKey) continue;
-      await games.update(g.id, { titleKey: key });
-      g.titleKey = key;
-      rekeyed++;
-    }
-    const sessionRepo = m.getRepository(PlaySession);
+    const rows = await m
+      .getRepository(LibraryGame)
+      .find({ where: { userId: conn.userId } });
+    const rekey = rows
+      .filter((g) => titleKey(g.title) !== g.titleKey)
+      .map((g) => ({ id: g.id, to: titleKey(g.title) }));
+    for (const g of rows) g.titleKey = titleKey(g.title);
     // ponytail: loads the sessions of every row (a few thousand); aggregate in SQL if it grows.
-    let sessions = rows.length
-      ? await sessionRepo.find({
+    const sessions = rows.length
+      ? await m.getRepository(PlaySession).find({
           where: { libraryGameId: In(rows.map((g) => g.id)) },
           select: {
             id: true,
@@ -223,20 +219,7 @@ export class SyncService {
         })
       : [];
     const scrapeAt = lastLegacyScrape(sessions);
-    const sessionFixes = planSessionRepairs(sessions, scrapeAt);
-    const gone = new Set<number>();
-    for (const f of sessionFixes) {
-      if (f.kind === 'deleteSession') gone.add(f.id);
-      else
-        await sessionRepo.update(f.id, {
-          startedAt: f.startedAt,
-          source: f.source,
-        });
-    }
-    if (gone.size) {
-      await sessionRepo.delete([...gone]);
-      sessions = sessions.filter((s) => !gone.has(s.id));
-    }
+    const sessionRepairs = planSessionRepairs(sessions, scrapeAt);
     const counts = sessionCounts(sessions);
     const plan = planRepairs(
       conn.provider,
@@ -244,47 +227,29 @@ export class SyncService {
       titles,
       ignoredIds,
     );
-    for (const a of plan.actions) await this.applyRepair(m, conn, a);
-    const all = [...sessionFixes, ...plan.actions];
-    if (rekeyed || all.length) {
-      const done: Record<string, number> = rekeyed ? { rekey: rekeyed } : {};
+    await applyRepairs(
+      m,
+      { rekey, sessionRepairs, actions: plan.actions },
+      (a) => {
+        // Kept every hour by design: say so once per process, not as a warning.
+        if (this.keptLogged.has(a.id)) return;
+        this.keptLogged.add(a.id);
+        this.logger.debug(
+          `sync ${conn.id}: library game ${a.id} is a PSN ${a.why} but has sessions; kept`,
+        );
+      },
+    );
+    const all = [...sessionRepairs, ...plan.actions].filter(
+      (a) => a.kind !== 'keep',
+    );
+    if (rekey.length || all.length) {
+      const done: Record<string, number> = rekey.length
+        ? { rekey: rekey.length }
+        : {};
       for (const a of all) done[a.kind] = (done[a.kind] ?? 0) + 1;
       this.logger.log(`sync ${conn.id} repairs: ${JSON.stringify(done)}`);
     }
     return { titles: plan.titles, scrapeAt };
-  }
-
-  private async applyRepair(
-    m: EntityManager,
-    conn: Connection,
-    a: RepairAction,
-  ): Promise<void> {
-    const games = m.getRepository(LibraryGame);
-    switch (a.kind) {
-      case 'relabel':
-        await games.update(a.id, { platform: a.platform });
-        return;
-      case 'delete':
-        await m.getRepository(GameIcon).delete({ libraryGameId: a.id });
-        await games.delete(a.id);
-        return;
-      case 'keep':
-        this.logger.warn(
-          `sync ${conn.id}: library game ${a.id} is a PSN ${a.why} but has sessions; kept`,
-        );
-        return;
-      case 'fold':
-      case 'foldLegacy': {
-        const dup = await games.findOneBy({
-          id: a.kind === 'fold' ? a.dupId : a.legacyId,
-        });
-        const into = await games.findOneBy({ id: a.intoId });
-        if (!dup || !into) return;
-        // The synced total stays authoritative; fold only moves sessions, icon and art.
-        await this.library.fold(dup, into, m);
-        await games.save(into);
-      }
-    }
   }
 
   private async applyTitle(

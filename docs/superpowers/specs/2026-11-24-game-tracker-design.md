@@ -211,7 +211,7 @@ are never flagged.
 every stats read: overview, period, calendar, session list, game page, library
 session sums):
 - Noise: a `psn`/`steam` session under 5 min is hidden everywhere (totals,
-  charts, lists, session counts). The sync repair also deletes old ones.
+  charts, lists, session counts). They stay in the table: no history is lost.
 - Undated: a `psn`/`steam` session whose window spans more than one local day
   (user time zone). It sits on no day (no bar, no `dayGames`, no game-page daily
   point, not in "today"). A range total (this/last week, 30 days, period games,

@@ -279,10 +279,13 @@ describe('planRepairs', () => {
         platform: 'steam',
         totalSeconds: h(675.9),
       });
-      expect(
-        planRepairs('psn', [s, x, plain, noTotal, steam], []).actions,
-      ).toEqual([
+      const rows = [s, x, plain, noTotal, steam];
+      expect(planRepairs('psn', rows, [], [], 'all').actions).toEqual([
         { kind: 'foldLegacy', legacyId: x.id, intoId: s.id, rule: 'R2' },
+        { kind: 'foldLegacy', legacyId: plain.id, intoId: s.id, rule: 'R1' },
+      ]);
+      // The hourly sync folds by R1 only.
+      expect(planRepairs('psn', rows, []).actions).toEqual([
         { kind: 'foldLegacy', legacyId: plain.id, intoId: s.id, rule: 'R1' },
       ]);
     });
@@ -410,7 +413,7 @@ describe('planRepairs', () => {
         ),
       );
 
-    const first = planRepairs('psn', rows, titles, ['CUSA00127_00']);
+    const first = planRepairs('psn', rows, titles, ['CUSA00127_00'], 'all');
     const folds = first.actions.flatMap((a) =>
       a.kind === 'foldLegacy' ? [[a.legacyId, a.intoId, a.rule]] : [],
     );
@@ -450,9 +453,30 @@ describe('planRepairs', () => {
     ).toEqual([27, 30]);
     // Both God of War regions are kept.
     expect(repaired.map((r) => r.id)).toEqual(expect.arrayContaining([12, 13]));
-    const second = planRepairs('psn', repaired, titles, ['CUSA00127_00']);
+    const second = planRepairs(
+      'psn',
+      repaired,
+      titles,
+      ['CUSA00127_00'],
+      'all',
+    );
     expect(second.actions).toEqual([]);
     expect(second.titles).toEqual(first.titles);
+
+    // The hourly sync on the same state folds the R1 rows only.
+    const hourly = planRepairs('psn', rows, titles, ['CUSA00127_00']);
+    expect(
+      hourly.actions.flatMap((a) =>
+        a.kind === 'foldLegacy' ? [[a.legacyId, a.rule]] : [],
+      ),
+    ).toEqual([
+      [19, 'R1'],
+      [21, 'R1'],
+      [22, 'R1'],
+      [24, 'R1'],
+      [23, 'R1'],
+      [25, 'R1'],
+    ]);
   });
 });
 
@@ -486,7 +510,7 @@ describe('first-sync session noise', () => {
     ).toEqual(scrape);
   });
 
-  it('deletes short Steam/PSN sessions and re-windows the rest to start at the scrape', () => {
+  it('re-windows Steam/PSN sessions to start at the scrape and deletes none', () => {
     const plan = planSessionRepairs(
       [
         s(1, 'psn', 40),
@@ -504,8 +528,9 @@ describe('first-sync session noise', () => {
       scrape,
     );
     expect(plan).toEqual([
-      { kind: 'deleteSession', id: 1, seconds: 40 },
-      { kind: 'deleteSession', id: 2, seconds: 299 },
+      // Short ones too: hidden by the stats noise filter, but kept.
+      { kind: 'rewindow', id: 1, startedAt: scrape, source: 'psn' },
+      { kind: 'rewindow', id: 2, startedAt: scrape, source: 'steam' },
       { kind: 'rewindow', id: 3, startedAt: scrape, source: 'psn' },
       { kind: 'rewindow', id: 4, startedAt: scrape, source: 'steam' },
       { kind: 'rewindow', id: 5, startedAt: scrape, source: 'import' },

@@ -92,32 +92,35 @@ export class LibraryService {
         manager,
         fromSync,
       );
-    if (exists) await this.fold(exists, legacy, manager ?? this.repo.manager);
+    if (exists) await foldGame(exists, legacy, manager ?? this.repo.manager);
     legacy.externalId = externalId;
     if (fromSync) legacy.title = title;
     return repo.save(legacy);
   }
+}
 
-  /** Moves `dup`'s sessions and icon onto `into` and deletes `dup` (frees its externalId). */
-  async fold(
-    dup: LibraryGame,
-    into: LibraryGame,
-    m: EntityManager,
-  ): Promise<void> {
-    await m
-      .getRepository(PlaySession)
-      .update({ libraryGameId: dup.id }, { libraryGameId: into.id });
-    const icons = m.getRepository(GameIcon);
-    if (await icons.existsBy({ libraryGameId: into.id }))
-      await icons.delete({ libraryGameId: dup.id });
-    else
-      await icons.update({ libraryGameId: dup.id }, { libraryGameId: into.id });
-    await m.getRepository(LibraryGame).delete(dup.id);
-    into.imageUrl ??= dup.imageUrl;
-    if (
-      dup.lastPlayedAt &&
-      (!into.lastPlayedAt || into.lastPlayedAt < dup.lastPlayedAt)
-    )
-      into.lastPlayedAt = dup.lastPlayedAt;
-  }
+/**
+ * Moves `dup`'s sessions and icon onto `into` and deletes `dup` (frees its externalId); `into`
+ * takes missing art and the later lastPlayedAt in memory (the caller saves it).
+ */
+export async function foldGame(
+  dup: LibraryGame,
+  into: LibraryGame,
+  m: EntityManager,
+): Promise<void> {
+  await m
+    .getRepository(PlaySession)
+    .update({ libraryGameId: dup.id }, { libraryGameId: into.id });
+  const icons = m.getRepository(GameIcon);
+  if (await icons.existsBy({ libraryGameId: into.id }))
+    await icons.delete({ libraryGameId: dup.id });
+  else
+    await icons.update({ libraryGameId: dup.id }, { libraryGameId: into.id });
+  await m.getRepository(LibraryGame).delete(dup.id);
+  into.imageUrl ??= dup.imageUrl;
+  if (
+    dup.lastPlayedAt &&
+    (!into.lastPlayedAt || into.lastPlayedAt < dup.lastPlayedAt)
+  )
+    into.lastPlayedAt = dup.lastPlayedAt;
 }

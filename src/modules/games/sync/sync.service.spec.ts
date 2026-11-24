@@ -34,6 +34,7 @@ describe('SyncService', () => {
   let runs: Row[];
   let conns: Row[];
   let icons: Row[];
+  let failIcons: boolean;
   let fetchTitles: jest.Mock;
   let client: PlatformClient;
   let service: SyncService;
@@ -81,6 +82,7 @@ describe('SyncService', () => {
     runs = [];
     conns = [];
     icons = [];
+    failIcons = false;
     fetchTitles = jest.fn();
     client = { fetchTitles };
 
@@ -147,10 +149,6 @@ describe('SyncService', () => {
           find: ({ where }: { where: Row }) =>
             Promise.resolve(match(sessions, where)),
           update: updateWhere(() => sessions),
-          delete: (ids: number[]) => {
-            sessions = sessions.filter((x) => !ids.includes(x.id as number));
-            return Promise.resolve();
-          },
         },
       ],
       [
@@ -176,7 +174,10 @@ describe('SyncService', () => {
       [
         GameIcon,
         {
-          existsBy: (w: Row) => Promise.resolve(match(icons, w).length > 0),
+          existsBy: (w: Row) =>
+            failIcons
+              ? Promise.reject(new Error('db down'))
+              : Promise.resolve(match(icons, w).length > 0),
           delete: (w: Row) => {
             icons = icons.filter((i) => !match([i], w).length);
             return Promise.resolve();
@@ -189,7 +190,17 @@ describe('SyncService', () => {
     const manager = { getRepository: (e: unknown) => get(e) };
     const ds = {
       manager,
-      transaction: (cb: (m: unknown) => Promise<void>) => cb(manager),
+      transaction: async (cb: (m: unknown) => Promise<void>) => {
+        const snap = structuredClone({ games, sessions, icons });
+        try {
+          return await cb(manager);
+        } catch (e) {
+          games.splice(0, games.length, ...snap.games);
+          sessions.splice(0, sessions.length, ...snap.sessions);
+          icons = snap.icons;
+          throw e;
+        }
+      },
     } as unknown as DataSource;
     service = new SyncService(
       get<Repository<Connection>>(Connection),
@@ -733,49 +744,66 @@ describe('SyncService', () => {
           psn('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5),
         ],
       });
+      const debug = jest
+        .spyOn(Logger.prototype, 'debug')
+        .mockImplementation(() => undefined);
       await service.syncConnection(1, now);
+      await service.syncConnection(1, new Date(now.getTime() + 3_600_000));
       expect(games).toHaveLength(2);
-      expect(warn).toHaveBeenCalledWith(
-        `sync 1: library game ${String(twin.id)} is a PSN duplicate but has sessions; kept`,
-      );
+      const msg = `sync 1: library game ${String(twin.id)} is a PSN duplicate but has sessions; kept`;
+      expect(debug.mock.calls.filter((c) => c[0] === msg)).toHaveLength(1);
+      expect(warn).not.toHaveBeenCalledWith(msg);
     });
 
-    it('a renamed new title: created by one sync, the other legacy row folds in on the next (R2)', async () => {
-      const siegeX = game({
-        platform: 'ps5',
-        externalId: 'legacy:r6x',
-        title: 'Tom Clancy’s Rainbow Six Siege X',
-        titleKey: 'tom clancys rainbow six siege x',
-        totalSeconds: h(675.9),
-        totalChangedAt: legacyAt,
-      });
-      const siege = game({
-        platform: 'ps5',
-        externalId: 'legacy:r6',
-        title: 'Tom Clancy’s Rainbow Six Siege',
-        titleKey: 'tom clancys rainbow six siege',
-        totalSeconds: h(548.4),
-        totalChangedAt: legacyAt,
-      });
-      fetchTitles.mockResolvedValue({
-        titles: [
-          psn('ps5', 'PPSA01397_00', 'Tom Clancy‘s Rainbow Six® Siege', 675.9),
-        ],
-      });
-      await service.syncConnection(1, now);
-      // Same key as the 548.4 h row: the existing key adoption takes it.
-      expect(games.map((g) => g.id)).toEqual([siegeX.id, siege.id]);
-      expect(siege.externalId).toBe('PPSA01397_00');
-
-      await service.syncConnection(1, new Date(now.getTime() + 1));
-      // The 675.9 h "Siege X" row folds into it (R2); the synced total stays.
-      expect(games).toEqual([
-        expect.objectContaining({
-          id: siege.id,
-          externalId: 'PPSA01397_00',
-          totalSeconds: h(675.9),
-        }),
-      ]);
+    it('the hourly sync never folds by R2/R3/R4 while live totals grow past legacy totals', async () => {
+      const legacy = (title: string, platform: 'ps4' | 'ps5', hours: number) =>
+        game({
+          platform,
+          externalId: `legacy:${title}`,
+          title,
+          titleKey: titleKey(title),
+          totalSeconds: h(hours),
+          totalChangedAt: legacyAt,
+        });
+      legacy('DOOM', 'ps5', 100); // R2 bait: "DOOM Eternal" passes 100 h
+      legacy('Far Cry 6', 'ps5', 13.1); // R3 bait: "Far Cry 5" passes 13.1 h within 60 s
+      legacy('Paladins', 'ps5', 4.9); // R4 bait: two "Paladins" rows sum past 4.9 h
+      const live = {
+        PPSA00001_00: ['DOOM Eternal', h(98)],
+        CUSA05847_00: ['Far Cry® 5', h(13.1) - 120],
+        CUSA05078_00: ['Paladins', h(4)],
+        CUSA04414_00: ['Paladins', h(0.8)],
+      } as const;
+      for (const [id, [title, t]] of Object.entries(live))
+        synced({
+          platform: id.startsWith('CUSA') ? 'ps4' : 'ps5',
+          externalId: id,
+          title,
+          totalSeconds: t,
+        });
+      const legacyIds = () =>
+        games
+          .filter((g) => String(g.externalId).startsWith('legacy:'))
+          .map((g) => g.id);
+      const before = legacyIds();
+      for (let hour = 1; hour <= 12; hour++) {
+        fetchTitles.mockResolvedValue({
+          titles: [
+            psn('ps5', 'PPSA00001_00', 'DOOM Eternal', 98 + hour * 0.5),
+            {
+              ...psn('ps4', 'CUSA05847_00', 'Far Cry® 5', 0),
+              totalSeconds: h(13.1) - 120 + hour * 20,
+            },
+            psn('ps4', 'CUSA05078_00', 'Paladins', 4),
+            psn('ps4', 'CUSA04414_00', 'Paladins', 0.8 + hour * 0.02),
+          ],
+        });
+        await service.syncConnection(
+          1,
+          new Date(now.getTime() + hour * 3_600_000),
+        );
+        expect(legacyIds()).toEqual(before);
+      }
     });
 
     it('Far Cry 6 never folds into Far Cry® 5 (number rule)', async () => {
@@ -938,7 +966,7 @@ describe('SyncService', () => {
       ]);
     });
 
-    it('the repair deletes short first-sync sessions and re-windows the rest, once', async () => {
+    it('the repair re-windows first-sync sessions, deletes none, once', async () => {
       const g = setup(at('11:00'));
       const first = {
         libraryGameId: g.id,
@@ -954,19 +982,61 @@ describe('SyncService', () => {
       );
       fetchTitles.mockResolvedValue({ titles: [psnTitle(36_000)] });
       await service.syncConnection(1, now);
+      // Short ones stay (the stats hide them); every psn/steam one now starts at the scrape.
       expect(synced()).toEqual([
-        expect.objectContaining({
-          id: 3,
-          source: 'psn',
-          seconds: 7200,
-          startedAt: scrape,
-        }),
+        expect.objectContaining({ id: 1, seconds: 40, startedAt: scrape }),
+        expect.objectContaining({ id: 2, seconds: 20, startedAt: scrape }),
+        expect.objectContaining({ id: 3, seconds: 7200, startedAt: scrape }),
         expect.objectContaining({ id: 4, source: 'tracker', startedAt: april }),
       ]);
       const before = JSON.stringify(sessions);
       await service.syncConnection(1, new Date(now.getTime() + 1));
       expect(JSON.stringify(sessions)).toBe(before);
     });
+  });
+
+  it('a failure mid-repair rolls everything back (rows, sessions, totals)', async () => {
+    conn({ provider: 'psn', lastSuccessAt: at('11:00') });
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const legacy = game({
+      platform: 'ps4',
+      externalId: 'legacy:cp',
+      title: 'Cyberpunk 2077',
+      titleKey: 'cyberpunk 2077',
+      totalSeconds: 3600 * 52,
+    });
+    sessions.push({
+      id: 1,
+      libraryGameId: legacy.id,
+      source: 'exophase',
+      legacyRef: 'game:1',
+      seconds: 600,
+    });
+    game({
+      platform: 'ps5', // relabelled to ps4 before the fold
+      externalId: 'CUSA18278_00',
+      title: 'Cyberpunk 2077',
+      titleKey: '',
+      totalSeconds: 3600 * 52,
+      totalChangedAt: at('10:00'),
+    });
+    fetchTitles.mockResolvedValue({
+      titles: [
+        {
+          platform: 'ps4',
+          externalId: 'CUSA18278_00',
+          title: 'Cyberpunk 2077',
+          totalSeconds: 3600 * 53,
+        },
+      ],
+    });
+    const before = JSON.stringify({ games, sessions, icons });
+    failIcons = true; // the fold moves the sessions, then fails
+    const run = await service.syncConnection(1, now);
+    expect(run.ok).toBe(false);
+    expect(JSON.stringify({ games, sessions, icons })).toBe(before);
+    jest.restoreAllMocks();
   });
 
   it('persists a refreshed secret and the client status', async () => {

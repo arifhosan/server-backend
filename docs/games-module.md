@@ -206,20 +206,29 @@ whole window lies inside the range. Overview, period and game responses carry
 `undatedSeconds` (in the totals, in no bar); the dashboard shows it as a muted
 note under the chart.
 
-### Library audit (read-only)
+### Library repair and audit
 
 Every Steam/PSN sync first repairs the user's library inside its transaction
-(`sync/repair-plan.ts`): titleKeys recomputed, PSN platforms taken from the
-title id (CUSA ps4, PPSA ps5), exact cross-gen duplicates and media apps
-deleted (kept and logged when they have sessions), every unadopted legacy row
-of a connected platform folded into the synced row it matches (rules R1-R4 in
-`library/legacy-match.ts`; the synced total stays, the legacy sessions and icon
-move), first-sync sessions older than the last Exophase scrape deleted
-(< 5 min) or re-windowed. To see what it would do, without writing or calling
-PSN/Steam:
+(`sync/repair-plan.ts`, written by `sync/repair-apply.ts`): titleKeys
+recomputed, PSN platforms taken from the title id (CUSA ps4, PPSA ps5), exact
+cross-gen duplicates and media apps deleted (kept when they have sessions),
+unadopted legacy rows folded into the synced row with the same titleKey (rule
+R1 in `library/legacy-match.ts`; the synced total stays, the legacy sessions and
+icon move), first-sync sessions older than the last Exophase scrape re-windowed
+to start at it. No session is ever deleted; PSN/Steam sessions under 5 min are
+hidden by the stats.
 
-`docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id>`
+Rules R2-R4 (near-equal total with a similar title, equal total, sum of
+same-titled rows) never run hourly: a legacy total is fixed while live totals
+grow, so a similar game would eventually pass through their window. They run
+only from the audit CLI, after review:
 
-It prints total hours (old `total_game_time`, now, after repair), each legacy
-fold with its rule, the unmatched legacy rows, media apps and cross-gen pairs to
-drop, relabels, noise sessions, and the title groups whose totals differ.
+1. Dry run, SELECTs only, never calls PSN/Steam:
+   `docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id>`
+   It prints total hours (old `total_game_time`, now, after repair), each legacy
+   fold with its rule, the unmatched legacy rows, media apps and cross-gen pairs
+   to drop, relabels, hidden noise and re-windowed sessions, and the title groups
+   whose totals differ.
+2. Apply the same plan in one transaction (all or nothing):
+   `docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id> --apply`
+   It prints the same report with `"applied": true`.

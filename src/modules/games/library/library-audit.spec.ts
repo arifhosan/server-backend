@@ -1,5 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
+import { GameIcon } from '../entities/game-icon.entity';
+import { LibraryGame } from '../entities/library-game.entity';
+import { PlaySession } from '../entities/play-session.entity';
 import {
   AuditGame,
   AuditInput,
@@ -17,7 +20,11 @@ describe('LibraryAuditCliModule', () => {
       imports: [LibraryAuditCliModule],
     })
       .overrideProvider(DataSource)
-      .useValue({})
+      .useValue({
+        options: { type: 'mysql' },
+        entityMetadatas: [],
+        getRepository: () => ({}),
+      })
       .compile();
     expect(mod.get(LibraryAuditService)).toBeInstanceOf(LibraryAuditService);
   });
@@ -134,7 +141,7 @@ describe('buildAudit', () => {
   });
 
   it('lists folds with their rule, unmatched legacy rows, apps, cross-gen pairs, noise and totals', () => {
-    const r = buildAudit(input());
+    const { report: r } = buildAudit(input());
     const fold = (f: (typeof r.legacyFolds)[number]) => [
       f.rule,
       f.legacy.id,
@@ -172,13 +179,14 @@ describe('buildAudit', () => {
       [2, 'ps4'],
       [4, 'ps4'],
     ]);
+    // Noise is hidden by the stats, never deleted; both first-sync sessions are re-windowed.
     expect(r.noiseSessions).toEqual({
       lastLegacyScrapeAt: scrape,
-      deleteCount: 1,
-      deleteHours: 0,
-      rewindowCount: 1,
+      hiddenCount: 1,
+      hiddenHours: 0,
+      rewindowCount: 2,
       repairs: [
-        { kind: 'deleteSession', id: 2, seconds: 40 },
+        { kind: 'rewindow', id: 2, startedAt: scrape, source: 'psn' },
         { kind: 'rewindow', id: 3, startedAt: scrape, source: 'psn' },
       ],
     });
@@ -203,16 +211,121 @@ describe('buildAudit', () => {
       }),
     );
     expect(
-      buildAudit(withSteamRow).legacyFolds.map((f) => [
+      buildAudit(withSteamRow).report.legacyFolds.map((f) => [
         f.rule,
         f.legacy.id,
         f.into.externalId,
       ]),
     ).toContainEqual(['R1', 8, '1812820']);
 
-    const psnOnly = buildAudit(input({ providers: ['psn'] }));
+    const psnOnly = buildAudit(input({ providers: ['psn'] })).report;
     expect(psnOnly.unmatchedLegacy).toContainEqual(
       expect.objectContaining({ id: 8, repairedByAConnection: false }),
     );
+  });
+
+  it('plans R2-R4 folds too (the hourly sync only does R1)', () => {
+    const i = input();
+    i.games.push(
+      g({
+        id: 10,
+        title: 'The Witcher 3: Wild Hunt',
+        platform: 'ps5',
+        totalSeconds: h(90.8),
+      }),
+      g({
+        id: 11,
+        title: 'The Witcher 3: Wild Hunt — Remastered',
+        platform: 'ps5',
+        externalId: 'PPSA04019_00',
+        totalSeconds: h(90.8),
+      }),
+    );
+    const { report, plan } = buildAudit(i);
+    expect(
+      report.legacyFolds.map((f) => [f.rule, f.legacy.id, f.into.id]),
+    ).toContainEqual(['R2', 10, 11]);
+    expect(plan.actions).toContainEqual({
+      kind: 'foldLegacy',
+      legacyId: 10,
+      intoId: 11,
+      rule: 'R2',
+    });
+  });
+
+  it('--apply writes the same plan in one transaction and says so', async () => {
+    const i = input();
+    let games = i.games.map((x) => ({ ...x }));
+    const sessions = i.sessions.map((x) => ({ ...x }));
+    const query = (sql: string) =>
+      Promise.resolve(
+        sql.includes('FROM library_game')
+          ? games
+          : sql.includes('FROM play_session')
+            ? sessions
+            : sql.includes('FROM total_game_time')
+              ? i.oldTotals
+              : [{ provider: 'psn' }, { provider: 'steam' }],
+      );
+    const byId = (id: number) => games.find((x) => x.id === id) ?? null;
+    const m = {
+      query,
+      getRepository: (e: unknown) =>
+        e === LibraryGame
+          ? {
+              update: (id: number, p: object) =>
+                Promise.resolve(Object.assign(byId(id)!, p)),
+              delete: (id: number) => {
+                games = games.filter((x) => x.id !== id);
+                return Promise.resolve();
+              },
+              findOneBy: ({ id }: { id: number }) => Promise.resolve(byId(id)),
+              save: (x: object) => Promise.resolve(x),
+            }
+          : e === PlaySession
+            ? {
+                update: (w: number | { libraryGameId: number }, p: object) => {
+                  for (const x of sessions)
+                    if (
+                      typeof w === 'number'
+                        ? x.id === w
+                        : x.libraryGameId === w.libraryGameId
+                    )
+                      Object.assign(x, p);
+                  return Promise.resolve();
+                },
+              }
+            : e === GameIcon
+              ? {
+                  existsBy: () => Promise.resolve(false),
+                  update: () => Promise.resolve(),
+                  delete: () => Promise.resolve(),
+                }
+              : undefined,
+    } as unknown as EntityManager;
+    const transaction = jest.fn((cb: (m: EntityManager) => Promise<unknown>) =>
+      cb(m),
+    );
+    const svc = new LibraryAuditService({
+      query,
+      transaction,
+    } as unknown as DataSource);
+
+    const report = await svc.run(2, { apply: true });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(report).toMatchObject({ applied: true });
+    // Netflix and the Ragnarok twin are gone, the Cyberpunk legacy row folded into CUSA18278.
+    expect(games.map((x) => x.id)).toEqual([1, 2, 5, 7, 8]);
+    expect(byId(2)).toMatchObject({
+      platform: 'ps4',
+      titleKey: 'cyberpunk 2077',
+    });
+    expect(sessions.find((x) => x.id === 1)?.libraryGameId).toBe(2);
+    expect(sessions.find((x) => x.id === 2)?.startedAt).toEqual(scrape);
+
+    // Without --apply nothing is written.
+    transaction.mockClear();
+    await svc.run(2);
+    expect(transaction).not.toHaveBeenCalled();
   });
 });

@@ -70,12 +70,6 @@ export function psnPlatformFromTitle(
   return psnTitlePlatform(titleId) ?? psnPlatform(category);
 }
 
-/** Categories psn-api documents for played games; the rest are apps (e.g. *_nongame_*, *_media_app). */
-const PSN_GAME_CATEGORIES = new Set([
-  'ps4_game',
-  'ps5_native_game',
-  'pspc_game',
-]);
 /** Whole-title matches only ("Disney Dreamlight Valley" is a game). */
 const PSN_APPS = new Set(
   [
@@ -107,16 +101,13 @@ export function isKnownPsnApp(name: string): boolean {
 export const isPsnMediaApp = (g: { platform: Platform; title: string }) =>
   (g.platform === 'ps4' || g.platform === 'ps5') && isKnownPsnApp(g.title);
 
-/** Media apps (Netflix, ...) show up among played games; they are not games. */
-export function isPsnGame(
-  titleId: string,
-  category: string,
-  name: string,
-): boolean {
-  if (isKnownPsnApp(name)) return false;
-  if (PSN_GAME_CATEGORIES.has(category)) return true;
-  if (/nongame|media|video|app/.test(category)) return false;
-  return psnTitlePlatform(titleId) !== undefined; // 'unknown' and anything new
+/**
+ * Media apps (Netflix, ...) show up among played games. Only an explicit app signal drops a
+ * title: an app category (e.g. ps4_nongame_mini_app, ps5_native_media_app) or a known app name.
+ * Anything else, `unknown` included, is synced as before (platform from the id or the category).
+ */
+export function isPsnGame(category: string, name: string): boolean {
+  return !isKnownPsnApp(name) && !/nongame|media|video|app/.test(category);
 }
 
 export function psnStatus(refreshExpiresAt: Date, now: Date): ConnectionStatus {
@@ -327,7 +318,7 @@ export class PsnClient implements PlatformClient {
         for (const t of page.titles) {
           const title = toObserved(t);
           if (!title) skipped++;
-          else if (isPsnGame(t.titleId, String(t.category ?? ''), title.title))
+          else if (isPsnGame(String(t.category ?? ''), title.title))
             titles.push(title);
           else ignoredIds.push(title.externalId);
         }
