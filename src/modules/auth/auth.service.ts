@@ -5,11 +5,12 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from './entities/user.entity';
+import { DEFAULT_TIMEZONE, User } from './entities/user.entity';
 import { Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { JwtPayload, LoginResult, PublicUser } from './types/auth.types';
+import { JwtPayload } from '../../common/auth/auth.types';
+import { LoginResult, PublicUser } from './types/auth.types';
 import * as bcrypt from 'bcrypt';
 
 const BCRYPT_ROUNDS = 10;
@@ -19,6 +20,7 @@ const toPublicUser = (user: User): PublicUser => ({
   email: user.email,
   firstName: user.firstName,
   lastName: user.lastName,
+  timezone: user.timezone,
 });
 
 @Injectable()
@@ -40,6 +42,7 @@ export class AuthService {
       lastName: dto.lastName,
       email: dto.email,
       password: hashed,
+      timezone: DEFAULT_TIMEZONE,
     });
 
     // Returning the saved entity directly would put the bcrypt hash in the
@@ -59,6 +62,12 @@ export class AuthService {
     });
 
     return { access_token: token, user: { id: user.id, email: user.email } };
+  }
+
+  async me(userId: number): Promise<PublicUser> {
+    const user = await this.userRepo.findOneBy({ id: userId });
+    if (!user) throw new UnauthorizedException('User not found');
+    return toPublicUser(user);
   }
 
   async verify(token: string): Promise<{ user: LoginResult['user'] }> {

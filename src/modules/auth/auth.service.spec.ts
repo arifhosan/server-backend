@@ -84,6 +84,7 @@ describe('AuthService', () => {
         email: dto.email,
         firstName: dto.firstName,
         lastName: dto.lastName,
+        timezone: 'Europe/Berlin',
       });
       expect(result).not.toHaveProperty('password');
     });
@@ -130,6 +131,34 @@ describe('AuthService', () => {
         access_token: 'signed.jwt.token',
         user: { id: 1, email: dto.email },
       });
+    });
+  });
+
+  describe('me', () => {
+    it('returns the public user', async () => {
+      userRepo.findOneBy.mockResolvedValue({
+        id: 1,
+        email: 'ada@example.com',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        timezone: 'Europe/Berlin',
+        password: 'hashed',
+      });
+
+      await expect(service.me(1)).resolves.toEqual({
+        id: 1,
+        email: 'ada@example.com',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        timezone: 'Europe/Berlin',
+      });
+    });
+
+    it('rejects an unknown id', async () => {
+      userRepo.findOneBy.mockResolvedValue(null);
+      await expect(service.me(99)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
   });
 

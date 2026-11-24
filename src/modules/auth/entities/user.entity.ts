@@ -1,5 +1,7 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
+export const DEFAULT_TIMEZONE = 'Europe/Berlin';
+
 @Entity()
 export class User {
   @PrimaryGeneratedColumn()
@@ -16,4 +18,7 @@ export class User {
 
   @Column()
   password: string;
+
+  @Column({ length: 64, default: DEFAULT_TIMEZONE })
+  timezone: string;
 }
