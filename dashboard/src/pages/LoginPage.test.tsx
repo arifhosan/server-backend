@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { App } from '../App';
 import { AuthProvider } from '../auth/AuthContext';
 
@@ -27,11 +27,17 @@ function mockBackend(opts: { loginStatus?: number } = {}) {
   return calls;
 }
 
+const Probe = () => <span data-testid="path">{useLocation().pathname}</span>;
+
+const submitBtn = (form: 'Sign in' | 'Create account') =>
+  within(screen.getByRole('form', { name: form })).getByRole('button', { name: form });
+
 const renderAt = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
         <App />
+        <Probe />
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -45,15 +51,16 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('form', { name: 'Sign in' })).toBeTruthy();
   });
 
-  it('tabs switch forms', async () => {
+  it('toggle buttons switch forms and expose state with aria-pressed', async () => {
     mockBackend();
     renderAt('/login');
     const user = userEvent.setup();
     await screen.findByRole('form', { name: 'Sign in' });
-    await user.click(screen.getByRole('tab', { name: 'Create account' }));
+    await user.click(screen.getByRole('button', { name: 'Create account', pressed: false }));
     expect(screen.getByRole('form', { name: 'Create account' })).toBeTruthy();
     expect(screen.queryByRole('form', { name: 'Sign in' })).toBeNull();
-    await user.click(screen.getByRole('tab', { name: 'Sign in' }));
+    expect(screen.getByRole('button', { name: 'Create account', pressed: true }).getAttribute('aria-pressed')).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Sign in', pressed: false }));
     expect(screen.getByRole('form', { name: 'Sign in' })).toBeTruthy();
   });
 
@@ -63,7 +70,7 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'wrongwrong');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(submitBtn('Sign in'));
     expect((await screen.findByRole('alert')).textContent).toBe('Email or password is wrong. Check both and try again.');
   });
 
@@ -71,12 +78,12 @@ describe('LoginPage', () => {
     const calls = mockBackend();
     renderAt('/login');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('tab', { name: 'Create account' }));
+    await user.click(await screen.findByRole('button', { name: 'Create account', pressed: false }));
     await user.type(screen.getByLabelText('First name'), 'A');
     await user.type(screen.getByLabelText('Last name'), 'B');
     await user.type(screen.getByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText(/^Password/), 'short');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    await user.click(submitBtn('Create account'));
     expect(screen.getByLabelText(/^Password/).getAttribute('aria-invalid')).toBe('true');
     expect((await screen.findByRole('alert')).textContent).toBe('At least 8 characters');
     expect(calls).not.toContain('POST /api/auth/register');
@@ -86,12 +93,12 @@ describe('LoginPage', () => {
     const calls = mockBackend();
     renderAt('/login?next=/period');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('tab', { name: 'Create account' }));
+    await user.click(await screen.findByRole('button', { name: 'Create account', pressed: false }));
     await user.type(screen.getByLabelText('First name'), 'A');
     await user.type(screen.getByLabelText('Last name'), 'B');
     await user.type(screen.getByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText(/^Password/), 'longenough');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
+    await user.click(submitBtn('Create account'));
     expect(await screen.findByRole('heading', { name: 'Period' })).toBeTruthy();
     expect(calls.indexOf('POST /api/auth/register')).toBeLessThan(calls.indexOf('POST /api/auth/login'));
   });
@@ -102,7 +109,7 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'password1');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(submitBtn('Sign in'));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Library' })).toBeTruthy());
     first.unmount();
 
@@ -110,17 +117,52 @@ describe('LoginPage', () => {
     renderAt('/login');
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'password1');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(submitBtn('Sign in'));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Overview' })).toBeTruthy());
   });
 
-  it('ignores an off-site next', async () => {
+  it.each(['//evil.example', '/\\evil.com'])('ignores off-site next %s', async (bad) => {
     mockBackend();
-    renderAt('/login?next=//evil.example');
+    renderAt(`/login?next=${encodeURIComponent(bad)}`);
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText('Email'), 'a@b.co');
     await user.type(screen.getByLabelText('Password'), 'password1');
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(submitBtn('Sign in'));
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeTruthy();
+    expect(screen.getByTestId('path').textContent).toBe('/');
+  });
+
+  it('shows required messages for empty register fields without submitting', async () => {
+    const calls = mockBackend();
+    renderAt('/login');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Create account', pressed: false }));
+    await user.click(submitBtn('Create account'));
+    expect(screen.getByText('Enter your first name.')).toBeTruthy();
+    expect(screen.getByText('Enter your last name.')).toBeTruthy();
+    expect(screen.getByText('Enter your email address.')).toBeTruthy();
+    expect(calls).not.toContain('POST /api/auth/register');
+  });
+
+  it('after register succeeds but login fails, shows sign-in with a notice', async () => {
+    const calls = mockBackend({ loginStatus: 500 });
+    renderAt('/login');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Create account', pressed: false }));
+    await user.type(screen.getByLabelText('First name'), 'A');
+    await user.type(screen.getByLabelText('Last name'), 'B');
+    await user.type(screen.getByLabelText('Email'), 'a@b.co');
+    await user.type(screen.getByLabelText(/^Password/), 'longenough');
+    await user.click(submitBtn('Create account'));
+    expect((await screen.findByRole('status')).textContent).toBe('Account created. Sign in to continue.');
+    expect(screen.getByRole('form', { name: 'Sign in' })).toBeTruthy();
+    expect(calls).toContain('POST /api/auth/register');
+  });
+
+  it('shows a spinner, not the form, while the session check runs', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    renderAt('/login');
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('form')).toBeNull();
   });
 });
