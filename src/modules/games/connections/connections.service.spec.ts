@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Connection } from '../entities/connection.entity';
-import { PsnClient, PsnSecret } from '../sync/psn.client';
+import { PsnClient, PsnPrivacyError, PsnSecret } from '../sync/psn.client';
 import { SyncFailedError } from '../sync/platform-client';
 import { SteamClient, SteamPrivateProfileError } from '../sync/steam.client';
 import { SyncService } from '../sync/sync.service';
@@ -145,6 +145,13 @@ describe('ConnectionsService', () => {
       'PSN rejected this token. Copy a fresh one and try again.',
     );
     expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('a privacy refusal is a 400 with the privacy text', async () => {
+    psn.connect.mockRejectedValue(new PsnPrivacyError());
+    await expect(service.connectPsn(1, NPSSO)).rejects.toThrow(
+      'Gaming history',
+    );
   });
 
   it('reconnecting PSN replaces the secret and resets status to ok', async () => {

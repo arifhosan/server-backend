@@ -12,6 +12,7 @@ import { SecretExpiredError, SyncFailedError } from './platform-client';
 import {
   parseIsoDuration,
   PsnClient,
+  PsnPrivacyError,
   PsnSecret,
   psnPlatform,
   psnStatus,
@@ -105,6 +106,59 @@ describe('PsnClient', () => {
     const days = (Date.parse(r.secret.npssoExpiresAt) - Date.now()) / DAY;
     expect(days).toBeGreaterThan(59.9);
     expect(days).toBeLessThan(60.1);
+  });
+
+  describe('connect resilience', () => {
+    const TOKEN = 'A'.repeat(64);
+    let err: jest.SpyInstance;
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      err = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      mNpsso.mockResolvedValue('code');
+      mCode.mockResolvedValue(tokens());
+      mPlayed.mockResolvedValue({ titles: [] } as never);
+    });
+    const logged = () => JSON.stringify([err.mock.calls, warn.mock.calls]);
+
+    it('connects with defaults when the profile lookup fails', async () => {
+      mProfile.mockRejectedValue(new Error(`bad ${TOKEN}`));
+      const r = await client.connect('NPSSO-VALUE');
+      expect(r).toMatchObject({ onlineId: 'PlayStation', accountId: 'me' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(logged()).not.toMatch(/[A-Za-z0-9_-]{40,}/);
+    });
+
+    it('an exchange failure is SecretExpiredError and logs the step only', async () => {
+      mNpsso.mockRejectedValue(new Error(`Sony said ${TOKEN}`));
+      await expect(client.connect(TOKEN)).rejects.toBeInstanceOf(
+        SecretExpiredError,
+      );
+      expect(err).toHaveBeenCalledTimes(1);
+      expect(logged()).toContain('exchange-code');
+      expect(logged()).not.toContain(TOKEN);
+    });
+
+    it('empty tokens fail at exchange-tokens', async () => {
+      mCode.mockResolvedValue({} as never);
+      await expect(client.connect('x')).rejects.toBeInstanceOf(
+        SecretExpiredError,
+      );
+      expect(logged()).toContain('exchange-tokens');
+    });
+
+    it('a played-games permission failure gives the privacy error', async () => {
+      mPlayed.mockRejectedValue(new Error('Forbidden 403'));
+      await expect(client.connect('x')).rejects.toBeInstanceOf(PsnPrivacyError);
+      expect(logged()).toContain('played-games');
+    });
+
+    it('another played-games failure is the generic rejection', async () => {
+      mPlayed.mockRejectedValue(new Error('timeout'));
+      await expect(client.connect('x')).rejects.toBeInstanceOf(
+        SecretExpiredError,
+      );
+    });
   });
 
   it('re-runs the NPSSO exchange when the refresh token has 2 days left', async () => {
