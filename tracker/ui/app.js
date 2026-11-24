@@ -13,6 +13,7 @@ const hm = (s) => {
 };
 // write only on change so the aria-live region is not re-announced by the 1 s tick
 const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const STORES = { steam: 'Steam', xbox: 'Xbox', epic: 'Epic', other: 'Other' };
 
 function render() {
@@ -24,8 +25,11 @@ function render() {
   now.classList.toggle('playing', !!g);
   now.classList.toggle('idle', !g);
   $('now-label').hidden = !g;
+  $('btn-ignore').hidden = !g;
   if (g) {
     setText($('now-title'), g.title);
+    $('btn-ignore').setAttribute('aria-label', `Ignore this game, ${g.title}`);
+    $('btn-ignore').dataset.title = g.title;
     const store = STORES[g.store] || g.store;
     setText($('now-sub'), state.paused ? store : `${store} · ${hm(g.session_seconds + elapsed)} this session`);
   } else {
@@ -45,7 +49,7 @@ function render() {
       ? 'Connected'
       : `Connected · last sent ${Math.max(0, Math.round(Date.now() / 1000 - c.last_sent_at))} s ago`;
   } else if (c.kind === 'offline') {
-    text = `Offline · ${c.queued} heartbeats waiting`;
+    text = c.queued ? `Offline · ${plural(c.queued, 'heartbeat', 'heartbeats')} waiting` : 'Offline';
   } else if (c.kind === 'no_token') {
     text = 'No device token set. Open Settings to paste one.';
   }
@@ -56,7 +60,7 @@ function render() {
   if (p) {
     setText($('psn-text'), p.status === 'expired'
       ? 'PSN sign-in expired'
-      : `PSN sign-in expires in ${p.days} days`);
+      : `PSN sign-in expires in ${plural(p.days, 'day', 'days')}`);
   }
   setText($('btn-pause'), state.paused ? 'Resume' : 'Pause');
 }
@@ -102,6 +106,7 @@ async function saveToken(token) {
 
 $('btn-settings').onclick = () => showSettings(true);
 $('btn-back').onclick = () => showSettings(false);
+$('btn-ignore').onclick = () => invoke('ignore', { title: $('btn-ignore').dataset.title });
 $('btn-pause').onclick = () => invoke('set_paused', { paused: !state.paused });
 $('psn-renew').onclick = () => invoke('open_dashboard', { path: '/connections' });
 $('btn-save').onclick = async () => {

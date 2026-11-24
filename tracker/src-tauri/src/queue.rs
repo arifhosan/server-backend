@@ -25,6 +25,7 @@ impl Queue {
         Queue { path, items, last_now: Cell::new(None) }
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -60,11 +61,20 @@ impl Queue {
         if rest.len() == self.items.len() {
             return Ok(()); // nothing acked or expired: leave the file alone
         }
-        let tmp = self.path.with_extension("jsonl.tmp");
-        fs::write(&tmp, lines(&rest)?)?;
-        fs::rename(&tmp, &self.path)?;
+        crate::settings::write_atomic(&self.path, lines(&rest)?.as_bytes())?;
         self.items = rest;
         Ok(())
+    }
+
+    /// Non-expired entries (what is really waiting to be sent).
+    pub fn live_len(&self, now: DateTime<Utc>) -> usize {
+        self.fresh(now).count()
+    }
+
+    /// Drop expired entries from memory and disk.
+    pub fn prune(&mut self, now: DateTime<Utc>) -> io::Result<()> {
+        self.last_now.set(Some(now));
+        self.ack(0)
     }
 }
 

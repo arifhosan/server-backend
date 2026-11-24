@@ -41,10 +41,21 @@ impl Settings {
     /// Atomic: write a temp file in the same dir, then rename over the target.
     pub fn save(&self, dir: &Path) -> io::Result<()> {
         std::fs::create_dir_all(dir)?;
-        let tmp = dir.join("settings.json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(self)?)?;
-        std::fs::rename(&tmp, dir.join("settings.json"))
+        write_atomic(&dir.join("settings.json"), serde_json::to_string_pretty(self)?.as_bytes())
     }
+}
+
+/// Write `<path>.tmp`, flush it to disk, then rename over `path`: a power cut leaves the old or the new file, never a torn one.
+pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    use std::io::Write as _;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(data)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, path)
 }
 
 /// `%APPDATA%\GameTracker`

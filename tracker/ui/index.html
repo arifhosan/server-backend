@@ -8,10 +8,11 @@
 </head>
 <body>
 <main id="main-view">
-  <section class="now" aria-live="polite">
+  <section class="now">
     <div id="now-label" class="label"><span class="dot" aria-hidden="true"></span><span id="now-label-text">NOW PLAYING</span></div>
-    <div id="now-title" class="title"></div>
+    <div id="now-title" class="title" aria-live="polite"></div>
     <div id="now-sub" class="muted"></div>
+    <button id="btn-ignore" type="button" class="small" hidden>Ignore this game</button>
   </section>
 
   <div class="row today"><span>Today on this PC</span><strong id="today"></strong></div>

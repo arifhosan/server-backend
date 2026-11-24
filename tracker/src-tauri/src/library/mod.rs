@@ -38,6 +38,16 @@ pub struct InstalledGame {
     pub logo: Option<PathBuf>,
 }
 
+/// Only fixed disks: probing a disconnected network drive or an empty optical drive can block for many seconds.
+fn is_fixed_drive(root: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    const DRIVE_FIXED: u32 = 3; // winbase.h; windows-sys keeps it in another feature module
+    let w: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: `w` is a NUL-terminated UTF-16 string that outlives the call.
+    unsafe { GetDriveTypeW(w.as_ptr()) == DRIVE_FIXED }
+}
+
 pub struct Roots {
     pub steam: Option<PathBuf>,
     pub drives: Vec<PathBuf>,
@@ -49,7 +59,7 @@ impl Roots {
     pub fn detect() -> Roots {
         let drives: Vec<PathBuf> = (b'A'..=b'Z')
             .map(|c| PathBuf::from(format!("{}:\\", c as char)))
-            .filter(|d| d.exists())
+            .filter(|d| is_fixed_drive(d))
             .collect();
         let steam = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
             .open_subkey("Software\\Valve\\Steam")

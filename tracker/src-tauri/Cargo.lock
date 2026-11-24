@@ -1291,6 +1291,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "windows-icons",
+ "windows-sys 0.60.2",
  "winreg",
 ]
 

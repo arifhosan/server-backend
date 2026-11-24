@@ -24,6 +24,19 @@ fn decode_logo(path: &Path) -> Option<DynamicImage> {
     r.decode().ok()
 }
 
+/// The configured logo, or (Xbox ships `Logo.scale-200.png` instead of `Logo.png`) the first scale-qualified sibling.
+fn resolve_logo(logo: &Path) -> Option<std::path::PathBuf> {
+    if logo.is_file() {
+        return Some(logo.to_path_buf());
+    }
+    let stem = logo.file_stem()?.to_string_lossy();
+    let ext = logo.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    [100, 125, 150, 200, 400]
+        .iter()
+        .map(|s| logo.with_file_name(format!("{stem}.scale-{s}{ext}")))
+        .find(|p| p.is_file())
+}
+
 /// PNG of at most 128 px and 64 KB, or None.
 fn encode(mut img: DynamicImage) -> Option<Vec<u8>> {
     if img.width() > MAX_PX || img.height() > MAX_PX {
@@ -39,7 +52,7 @@ pub fn icon_png(store: Store, logo: Option<&Path>, exe: &Path) -> Option<Vec<u8>
     if store == Store::Steam {
         return None;
     }
-    if let Some(png) = logo.filter(|_| store == Store::Xbox).and_then(decode_logo).and_then(encode) {
+    if let Some(png) = logo.filter(|_| store == Store::Xbox).and_then(resolve_logo).and_then(|p| decode_logo(&p)).and_then(encode) {
         return Some(png);
     }
     // a panic inside the Win32 icon code just skips the icon
@@ -52,7 +65,7 @@ pub fn send_once(api: &Api, token: &str, settings: &Mutex<Settings>, dir: &Path,
     if g.store == Store::Steam || settings.lock().is_ok_and(|s| s.sent_icons.contains(&g.key)) {
         return;
     }
-    let Some(png) = icon_png(g.store, g.logo.as_deref(), Path::new(&g.exe)) else { return };
+    let Some(png) = icon_png(g.store, g.logo.as_deref(), &g.exe_path) else { return };
     let r = api.put_icon(token, g.store.as_str(), g.store_id.as_deref(), &g.title, &png);
     if let (Ok(()), Ok(mut s)) = (r, settings.lock()) {
         s.sent_icons.push(g.key.clone());
@@ -66,7 +79,7 @@ mod tests {
     use chrono::Utc;
 
     fn game(store: Store, logo: Option<std::path::PathBuf>) -> RunningGame {
-        RunningGame { key: "xbox:Pkg".into(), store, store_id: Some("Pkg".into()), title: "Halo".into(), exe: "nope.exe".into(), logo, started_at: Utc::now() }
+        RunningGame { key: "xbox:Pkg".into(), store, store_id: Some("Pkg".into()), title: "Halo".into(), exe: "nope.exe".into(), exe_path: "nope.exe".into(), logo, started_at: Utc::now() }
     }
 
     fn logo_file(dir: &Path, px: u32) -> std::path::PathBuf {
@@ -84,6 +97,19 @@ mod tests {
         assert!(img.width() <= 128 && img.height() <= 128);
         assert!(png.len() <= 65_536);
         assert_eq!(&png[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn missing_logo_falls_back_to_scale_sibling() {
+        let d = tempfile::tempdir().unwrap();
+        let cfg = d.path().join("Logo.png");
+        assert!(resolve_logo(&cfg).is_none());
+        let real = logo_file(d.path(), 64); // writes logo.png; Windows paths are case-insensitive
+        std::fs::rename(&real, d.path().join("Logo.scale-200.png")).unwrap();
+        std::fs::copy(d.path().join("Logo.scale-200.png"), d.path().join("Logo.scale-150.png")).unwrap();
+        assert_eq!(resolve_logo(&cfg), Some(d.path().join("Logo.scale-150.png"))); // first existing in order
+        assert!(icon_png(Store::Xbox, Some(&cfg), Path::new("nope.exe")).is_some());
+        assert_eq!(resolve_logo(&logo_file(d.path(), 8)), Some(d.path().join("logo.png"))); // exact file wins
     }
 
     #[test]

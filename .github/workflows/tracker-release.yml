@@ -16,6 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Refuse to build with the placeholder updater key
+        run: |
+          if grep -q 'TODO-OWNER-REPLACE' tracker/src-tauri/tauri.conf.json; then
+            echo "::error file=tracker/src-tauri/tauri.conf.json::updater pubkey is still the TODO placeholder; set it as described in tracker/README.md (Releasing) before tagging"
+            exit 1
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2

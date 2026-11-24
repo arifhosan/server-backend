@@ -13,7 +13,10 @@ pub struct RunningGame {
     pub store: Store,
     pub store_id: Option<String>,
     pub title: String,
+    /// file name only; this is what heartbeats carry
     pub exe: String,
+    /// full path of the running exe, for icon extraction; never sent anywhere
+    pub exe_path: std::path::PathBuf,
     pub logo: Option<std::path::PathBuf>,
     pub started_at: DateTime<Utc>,
 }
@@ -54,6 +57,8 @@ pub struct AppState {
     pub connection: Connection,
     pub psn: Option<PsnBanner>,
     pub paused: bool,
+    /// heartbeats the server refused for good (4xx) and that were dropped from the queue
+    pub dropped_heartbeats: u32,
 }
 
 impl AppState {
@@ -64,6 +69,7 @@ impl AppState {
             connection: if has_token { Connection::Ok { last_sent_at: None } } else { Connection::NoToken },
             psn: None,
             paused,
+            dropped_heartbeats: 0,
         }
     }
 }

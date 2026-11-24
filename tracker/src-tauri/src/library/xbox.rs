@@ -23,13 +23,16 @@ pub fn parse_game(folder: &Path, config: Option<&str>) -> InstalledGame {
     let doc = config.and_then(|c| roxmltree::Document::parse(c.trim_start_matches('\u{feff}')).ok());
     let a = |el, name| doc.as_ref().and_then(|d| attr(d, el, name));
     let id = a("Identity", "Name");
+    // an unresolvable ms-resource name falls back to the readable folder name before the package identity
+    let title = match a("ShellVisuals", "DefaultDisplayName") {
+        Some(t) if !t.starts_with("ms-resource:") => t,
+        Some(_) => file_name(folder),
+        None => id.clone().unwrap_or_else(|| file_name(folder)),
+    };
     InstalledGame {
         store: Store::Xbox,
-        store_id: id.clone(),
-        title: a("ShellVisuals", "DefaultDisplayName")
-            .filter(|t| !t.starts_with("ms-resource:"))
-            .or(id)
-            .unwrap_or_else(|| file_name(folder)),
+        store_id: id,
+        title,
         logo: a("ShellVisuals", "Square150x150Logo").and_then(|l| safe_logo(&content, &l)),
         install_dir: content,
     }
@@ -106,7 +109,8 @@ mod tests {
         assert_eq!(parse_game(f, Some(&cfg("..\\x.png"))).logo, None);
         assert_eq!(parse_game(f, Some(&cfg("C:\\x.png"))).logo, None);
         let g = parse_game(f, Some(&cfg("Assets\\l.png")));
-        assert_eq!(g.title, "Pub.Thing");
+        assert_eq!(g.title, "Folder"); // folder name before Identity Name
+        assert_eq!(g.store_id.as_deref(), Some("Pub.Thing"));
         assert!(g.logo.is_some());
     }
 }
