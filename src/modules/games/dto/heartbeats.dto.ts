@@ -3,12 +3,16 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDefined,
   IsIn,
   IsISO8601,
+  IsObject,
   IsOptional,
   IsString,
   Length,
+  Matches,
   MaxLength,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -21,11 +25,13 @@ export class HeartbeatGameDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(64)
   storeId?: string;
 
   @IsString()
   @Length(1, 255)
+  @Matches(/\S/)
   title: string;
 
   @IsOptional()
@@ -36,8 +42,11 @@ export class HeartbeatGameDto {
 
 export class HeartbeatDto {
   @IsISO8601()
+  @Matches(/(Z|[+-]\d{2}:\d{2})$/)
   at: string;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => HeartbeatGameDto)
   game: HeartbeatGameDto;
