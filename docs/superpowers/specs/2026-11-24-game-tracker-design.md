@@ -331,7 +331,7 @@ PSN:
   - Any other legacy session longer than its window (e.g. 36 h of one game in
     the 2026-11-04 run) is also marked `import`: late platform syncs, not play.
   - `game_old` (49 rows of pre-launch test runs, 2025-04-25 to 04-29) →
-    `play_session` with source `import`: preserved and queryable, but not
+    `play_session` with source `legacy_test`: preserved and queryable, but not
     counted, because the 2025-04-29 baseline already covers those totals.
   - `playtime` (daily sums) is not converted: it is derived from `game`, and
     every one of its rows stays in the archive below. 8 of its 366 days
@@ -421,6 +421,11 @@ PSN:
   - Game detail: totals per platform, daily chart, session list
   - History: year calendar heatmap, monthly totals
   - Devices: create (token shown once, copy button), rename, revoke, last seen
+    and a "Download tracker for Windows" button linking to
+    `https://github.com/ArifHosan/server-backend/releases/latest/download/GameTracker-setup.exe`
+    (stable asset name on every tracker release; the repo is public). First-run
+    flow on the page: 1 download and install, 2 create a device token, 3 paste it
+    in the tracker's Settings.
   - Connections: Steam (profile input, test, status), PSN (paste NPSSO, expiry
     countdown, status), manual "sync now"
   - Account: name, email, password, timezone
