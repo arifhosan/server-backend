@@ -13,6 +13,8 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
         username: config.get<string>('DB_USERNAME'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
+        // DATETIME columns hold UTC whatever the process TZ is.
+        timezone: 'Z',
         autoLoadEntities: true,
         // Schema auto-sync issues DDL on every boot and will drop columns
         // that no longer appear on an entity. Opt in explicitly per

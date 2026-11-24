@@ -12,6 +12,23 @@ import { errorMessage, errorStack } from '@/common/utils/error.util';
 /** getStatus() returns a plain number, so compare against a number. */
 const SERVER_ERROR_THRESHOLD = 500;
 
+/**
+ * Express middleware errors (body-parser: body too large, malformed JSON) are
+ * http-errors: a 4xx `status` with `expose: true` marks a client-safe message.
+ */
+function exposedClientStatus(e: unknown): number | null {
+  const { status, expose } = (e ?? {}) as {
+    status?: unknown;
+    expose?: unknown;
+  };
+  return typeof status === 'number' &&
+    status >= 400 &&
+    status < 500 &&
+    expose === true
+    ? status
+    : null;
+}
+
 interface ErrorBody {
   statusCode: number;
   message: string;
@@ -36,7 +53,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+        : (exposedClientStatus(exception) ?? HttpStatus.INTERNAL_SERVER_ERROR);
 
     const body: ErrorBody = {
       statusCode: status,
@@ -73,6 +90,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
       return exception.message;
     }
+    if (exposedClientStatus(exception) !== null)
+      return errorMessage((exception as Error).message);
     return status === SERVER_ERROR_THRESHOLD
       ? 'Internal server error'
       : 'Unexpected error';
