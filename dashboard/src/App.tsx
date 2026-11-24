@@ -3,6 +3,7 @@ import { useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
 import { Spinner } from './components/Spinner';
 import { LoginPage } from './pages/LoginPage';
+import { OverviewPage } from './pages/OverviewPage';
 
 /** Signed-out visitors go to /login?next=<where they were headed>. */
 function RequireAuth() {
@@ -21,7 +22,7 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
-        <Route index element={<Page title="Overview" />} />
+        <Route index element={<OverviewPage />} />
         <Route path="library" element={<Page title="Library" />} />
         <Route path="games/:id" element={<Page title="Game" />} />
         <Route path="period" element={<Page title="Period" />} />
