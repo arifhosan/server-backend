@@ -22,5 +22,6 @@
     "strictPropertyInitialization": false,
     "noImplicitOverride": true,
     "types": ["node", "jest"]
-  }
+  },
+  "exclude": ["node_modules", "dist", "dashboard", "tracker"]
 }
