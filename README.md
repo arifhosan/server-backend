@@ -2,8 +2,8 @@
 
 Personal API backend built with [NestJS](https://nestjs.com/) and TypeORM/MySQL.
 It exposes a few unrelated endpoints used by personal projects: JWT auth, a
-Home Assistant proxy for local bus times, a nightly scraper that tracks game
-playtime, and a voice assistant backend for a self-built ESP32 speaker.
+Home Assistant proxy for local bus times, a game playtime tracker (Windows tracker,
+Steam and PSN sync), and a voice assistant backend for a self-built ESP32 speaker.
 
 ## Modules
 
@@ -11,7 +11,7 @@ playtime, and a voice assistant backend for a self-built ESP32 speaker.
 | ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
 | `auth`     | `POST /auth/register`, `POST /auth/login`, `GET /auth/verify` | Registration and JWT issuing/verification. |
 | `ha`       | `GET /ha/aseag/route/:routeId`    | Cached proxy for the ASEAG public-transport endpoint (10 minute TTL).         |
-| `scraping` | `GET /scraping`, `GET /scraping/games` | Scrapes Exophase for playtime; also runs nightly at 23:00 via cron.      |
+| `games`    | `GET /games/now`, `GET /games/tracker/status`, `POST /games/tracker/heartbeats`, `POST/GET /games/devices`, `PATCH/DELETE /games/devices/:id` | Game playtime: tracker heartbeats, device tokens, Steam/PSN sync. Further routes (connections, stats) are added by later tasks; the full list is in [docs/games-module.md](docs/games-module.md). Env: `STEAM_API_KEY`, `GAMES_SECRET_KEY`. |
 | `voice`    | `POST /voice/ota`, `GET /voice/ws`, `GET /voice/client` | ESP32 voice assistant: speech in, speech out. See [docs/voice-protocol.md](docs/voice-protocol.md). |
 | `tokens`   | `GET /tokens/last7`, `POST /tokens` | Claude Code token usage per day for the portfolio. See "Token usage" below. |
 
@@ -29,7 +29,7 @@ src/
   modules/
     auth/        controller, service, dto/, entities/, types/
     ha/
-    scraping/    controller, service, dto/, entities/, scrapers/, utils/
+    games/       devices/, tracker/, sync/, library/, legacy/, entities/, dto/, utils/
     voice/       controller, gateway/, pipeline/, clients/, audio/, public/
   main.ts        bootstrap: CORS, validation pipe, exception filter
 ```
@@ -155,9 +155,9 @@ CREATE TABLE token_day (
   development: when on, TypeORM issues DDL on every boot and will drop columns
   that no longer appear on an entity. There is no migration setup yet, so
   schema changes currently have to be applied by hand.
-- **`Game.playtimeMs` holds seconds, not milliseconds.** The scraper has always
-  written seconds and the column was never renamed. Every stored row and
-  consumer assumes seconds; treat the name as historical.
+- **`Game.playtimeMs` holds seconds, not milliseconds.** This is a legacy table
+  (the Exophase scraper is gone; nothing writes it now). It always held seconds
+  and the column was never renamed; treat the name as historical.
 - **The `utilities` table is orphaned.** Its module was removed; the table was
   left in place. Drop it manually if the data is not worth keeping.
 - **`HaController` disables TLS verification** via `rejectUnauthorized: false`.

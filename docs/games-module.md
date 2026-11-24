@@ -75,6 +75,28 @@ CREATE TABLE play_session (
 
 `legacyRef` (`game:<id>` / `game_old:<id>`) makes the legacy import idempotent.
 
+## Routes
+
+Authoritative list (README shows the short form). Tasks 9, 10 and 12 add connections, stats and more; keep this section current.
+
+- `GET /games/now`, `GET /games/tracker/status`, `POST /games/tracker/heartbeats` (device token)
+- `POST /games/devices`, `GET /games/devices`, `PATCH /games/devices/:id`, `DELETE /games/devices/:id`
+
+Public host: `games.server.arifhosan.me/api/*` (Traefik strips `/api`).
+
+## Deploy runbook
+
+Do these in order.
+
+1. `mysqldump api_db game game_old total_game_time playtime > legacy-YYYY-MM-DD.sql`
+2. Apply all SQL in this file.
+3. Set `STEAM_API_KEY` and `GAMES_SECRET_KEY` (`openssl rand -base64 32`) in the Portainer stack.
+4. Deploy the image.
+5. Legacy import: dry run, then `--commit` (see below).
+6. Only then connect Steam and PSN; their first sync adopts the legacy rows.
+
+The Grafana game dashboards keep reading the untouched legacy tables, which get no new rows from now on.
+
 ## Legacy import runbook
 
 One-off import of the Exophase-era data (`game`, `game_old`, `total_game_time`)

@@ -5,7 +5,6 @@ import { AppService } from './app.service';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HaController } from './modules/ha/ha.controller';
 import { DatabaseModule } from './database/database.module';
-import { ScrapingModule } from './modules/scraping/scraping.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RadioModule } from './modules/radio/radio.module';
 import { VoiceModule } from './modules/voice/voice.module';
@@ -17,7 +16,6 @@ import { GamesModule } from './modules/games/games.module';
     ConfigModule.forRoot({ isGlobal: true }),
     CacheModule.register(),
     DatabaseModule,
-    ScrapingModule,
     AuthModule,
     RadioModule,
     VoiceModule,

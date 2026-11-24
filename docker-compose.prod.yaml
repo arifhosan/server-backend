@@ -8,6 +8,8 @@
 # Before the first deploy of this image, create the radio presets table
 # (docs/radio-module.md) and the token usage table (README, "Token usage").
 # Without them only those two features fail; everything else works regardless.
+# The games module needs its tables first: follow the deploy runbook in
+# docs/games-module.md.
 
 services:
   app:
@@ -43,6 +45,12 @@ services:
       VOICE_AUTH_TOKEN: ${VOICE_AUTH_TOKEN:-}
       MODELRELAY_MODEL: ${MODELRELAY_MODEL:-auto-fastest}
 
+      # Games module. STEAM_API_KEY: Steam Web API key for library sync.
+      # GAMES_SECRET_KEY: encrypts stored provider secrets (openssl rand
+      # -base64 32). Changing it invalidates stored secrets.
+      STEAM_API_KEY: ${STEAM_API_KEY:?STEAM_API_KEY must be set}
+      GAMES_SECRET_KEY: ${GAMES_SECRET_KEY:?GAMES_SECRET_KEY must be set}
+
     # GET / is the one route that touches neither the database nor an upstream
     # service, so it reports the process rather than its dependencies.
     healthcheck:
@@ -63,6 +71,14 @@ services:
       - traefik.http.routers.backend.tls=true
       - traefik.http.routers.backend.tls.certresolver=myresolver
       - traefik.http.services.backend.loadbalancer.server.port=3000
+      # games.server.arifhosan.me/api/* -> same backend, /api prefix stripped.
+      - traefik.http.routers.games-api.rule=Host(`games.server.arifhosan.me`) && PathPrefix(`/api`)
+      - traefik.http.routers.games-api.entrypoints=websecure
+      - traefik.http.routers.games-api.tls=true
+      - traefik.http.routers.games-api.tls.certresolver=myresolver
+      - traefik.http.routers.games-api.middlewares=games-api-strip
+      - traefik.http.routers.games-api.service=backend
+      - traefik.http.middlewares.games-api-strip.stripprefix.prefixes=/api
 
     networks:
       - traefik
