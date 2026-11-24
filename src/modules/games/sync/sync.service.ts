@@ -203,11 +203,9 @@ export class SyncService {
     const expired = e instanceof SecretExpiredError;
     // Only SyncFailedError text is known to be free of secrets.
     const message =
-      e instanceof SyncFailedError
+      e instanceof SyncFailedError || expired
         ? e.message.slice(0, 500)
-        : expired
-          ? 'Secret expired'
-          : `Unexpected error from ${conn.provider}`;
+        : `Unexpected error from ${conn.provider}`;
     this.logger.warn(
       `sync ${conn.id} failed: ${e instanceof Error ? e.name : 'non-Error'}: ${message}`,
     );
