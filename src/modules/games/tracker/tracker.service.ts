@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -46,6 +47,14 @@ export function trackerPlatform(store: TrackerStore): Platform {
   return PLATFORMS[store];
 }
 
+/** External id for games without a store id; hashes the title when titleKey is empty (Ruling R8). */
+function folderId(title: string): string {
+  const key = titleKey(title);
+  if (key) return `folder:${key}`;
+  const hash = createHash('sha256').update(title.trim()).digest('hex');
+  return `folder:t-${hash.slice(0, 16)}`;
+}
+
 @Injectable()
 export class TrackerService {
   constructor(
@@ -82,7 +91,7 @@ export class TrackerService {
         const game = await this.library.upsertByExternalId(
           device.userId,
           trackerPlatform(store),
-          storeId ?? `folder:${titleKey(title)}`,
+          storeId ?? folderId(title),
           title,
           manager,
         );

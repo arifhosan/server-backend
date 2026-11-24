@@ -172,6 +172,17 @@ describe('TrackerService', () => {
     expect(trackerPlatform('xbox')).toBe('xbox_pc');
   });
 
+  it('keeps different CJK titles as separate games', async () => {
+    const h = (title: string) =>
+      ({
+        at: now.toISOString(),
+        game: { store: 'other', title },
+      }) as HeartbeatDto;
+    await service.ingest(dev(1), [h('原神'), h('崩壊')], now);
+    expect(gameRows).toHaveLength(2);
+    expect(gameRows[0].externalId).toMatch(/^folder:t-[0-9a-f]{16}$/);
+  });
+
   it('nowPlaying returns only recent tracker sessions', async () => {
     await service.ingest(dev(1), [hb(0)], now);
     await service.ingest(dev(2), [hb(-300, 'Celeste', '504230')], now);
