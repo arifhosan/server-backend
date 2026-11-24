@@ -53,12 +53,23 @@ fn run_status(app: &AppHandle) {
     let shared = app.state::<Shared>();
     let server = shared.settings.lock_ok().server_url.clone();
     let Some(t) = token::get() else { return };
-    match poll_status(&Api::new(&server), &t, Utc::now()) {
-        StatusPoll::Banner(b) => shared.state.lock_ok().psn = b,
-        StatusPoll::Revoked => shared.state.lock_ok().connection = Connection::Revoked,
-        StatusPoll::Failed => return,
+    let poll = poll_status(&Api::new(&server), &t, Utc::now());
+    if apply_poll(&mut shared.state.lock_ok(), poll) {
+        publish(app);
     }
-    publish(app);
+}
+
+/// Store a poll result; false if nothing changed. A result that arrives after the token was removed is dropped.
+fn apply_poll(st: &mut AppState, poll: StatusPoll) -> bool {
+    if st.connection == Connection::NoToken {
+        return false;
+    }
+    match poll {
+        StatusPoll::Banner(b) => st.psn = b,
+        StatusPoll::Revoked => st.connection = Connection::Revoked,
+        StatusPoll::Failed => return false,
+    }
+    true
 }
 
 /// Every 10 min, and at once on a wake message.
@@ -241,6 +252,19 @@ mod tests {
         TrackerStatus {
             psn: Some(crate::api::PsnStatus { status: s.into(), expires_at: exp.map(|e| e.parse().unwrap()) }),
         }
+    }
+
+    #[test]
+    fn poll_after_token_removal_is_dropped() {
+        let b = || StatusPoll::Banner(Some(PsnBanner { status: "expired".into(), days: None }));
+        let mut st = AppState::new(false, false);
+        assert!(!apply_poll(&mut st, b()));
+        assert!(st.psn.is_none());
+        assert!(!apply_poll(&mut st, StatusPoll::Revoked));
+        assert_eq!(st.connection, Connection::NoToken);
+        let mut st = AppState::new(true, false);
+        assert!(apply_poll(&mut st, b()));
+        assert!(st.psn.is_some());
     }
 
     #[test]
