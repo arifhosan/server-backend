@@ -12,7 +12,8 @@ import { SyncRun } from '../entities/sync-run.entity';
 import { GAMES_SECRET_KEY } from '../games.constants';
 import { ConnectionStatus, Provider } from '../games.types';
 import { PsnClient } from '../sync/psn.client';
-import { SteamClient, SteamPrivateProfileError } from '../sync/steam.client';
+import { SyncFailedError } from '../sync/platform-client';
+import { SteamClient } from '../sync/steam.client';
 import { SyncService } from '../sync/sync.service';
 import { sealSecret } from '../utils/secret-box';
 
@@ -73,7 +74,8 @@ export class ConnectionsService {
       // One fetch as the test: a private profile fails here, before anything is saved.
       await this.steam.fetchTitles({ externalId: steamId } as Connection);
     } catch (e) {
-      if (e instanceof SteamPrivateProfileError)
+      // Not found, private, API error, unreachable: all fixed, secret-free texts (Ruling R9).
+      if (e instanceof SyncFailedError)
         throw new BadRequestException(e.message);
       throw e;
     }

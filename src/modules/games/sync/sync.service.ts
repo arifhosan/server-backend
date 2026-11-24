@@ -10,8 +10,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
   EntityManager,
+  IsNull,
   LessThan,
-  MoreThanOrEqual,
+  MoreThan,
   Not,
   Repository,
 } from 'typeorm';
@@ -112,15 +113,24 @@ export class SyncService {
     if (!client) throw new SyncFailedError(`No client for ${conn.provider}`);
     const secret = conn.secret ? openSecret(conn.secret, this.key) : null;
     const res = await client.fetchTitles(conn, secret);
-    if (res.secret !== undefined)
-      conn.secret = sealSecret(res.secret, this.key);
-    if (res.secretExpiresAt) conn.secretExpiresAt = res.secretExpiresAt;
-    // Refreshed tokens must survive even if the writes below fail.
-    if (res.secret !== undefined || res.secretExpiresAt)
-      await this.connections.update(conn.id, {
-        secret: conn.secret,
-        secretExpiresAt: conn.secretExpiresAt,
-      });
+    if (res.secret !== undefined || res.secretExpiresAt) {
+      const fields = {
+        secret:
+          res.secret !== undefined
+            ? sealSecret(res.secret, this.key)
+            : conn.secret,
+        secretExpiresAt: res.secretExpiresAt ?? conn.secretExpiresAt,
+      };
+      // Refreshed tokens must survive even if the writes below fail, but never
+      // over a secret the user pasted while this run was fetching.
+      const r = await this.connections.update(
+        { id: conn.id, secret: conn.secret ?? IsNull() },
+        fields,
+      );
+      if (r.affected === 0)
+        throw new SyncFailedError('Connection was renewed during the sync');
+      Object.assign(conn, fields);
+    }
     if (res.titles.length === 0 && (conn.lastGameCount ?? 0) > 0)
       throw new SyncFailedError(
         `Returned 0 games, previously ${conn.lastGameCount}`,
@@ -130,13 +140,16 @@ export class SyncService {
       client.statusAfter?.(conn.secretExpiresAt, now) ?? 'ok';
     await this.dataSource.transaction(async (m) => {
       for (const t of res.titles) await this.applyTitle(m, conn, t, now);
-      await m.getRepository(Connection).update(conn.id, {
-        status,
-        lastSyncAt: now,
-        lastSuccessAt: now,
-        lastError: null,
-        lastGameCount: res.titles.length,
-      });
+      await m.getRepository(Connection).update(
+        { id: conn.id, secret: conn.secret ?? IsNull() },
+        {
+          status,
+          lastSyncAt: now,
+          lastSuccessAt: now,
+          lastError: null,
+          lastGameCount: res.titles.length,
+        },
+      );
     });
     run.ok = true;
     run.gameCount = res.titles.length;
@@ -164,14 +177,11 @@ export class SyncService {
         .update(game.id, { imageUrl: t.imageUrl });
     }
     const steam = conn.provider === 'steam';
-    let alreadyTracked = 0;
-    if (steam && game.totalChangedAt)
-      alreadyTracked =
-        (await m.getRepository(PlaySession).sum('seconds', {
-          libraryGameId: game.id,
-          source: 'tracker',
-          startedAt: MoreThanOrEqual(game.totalChangedAt),
-        })) ?? 0;
+    const alreadyTracked =
+      steam && game.totalChangedAt
+        ? (game.trackerCreditSeconds ?? 0) +
+          (await this.trackedSince(m, game.id, game.totalChangedAt, now))
+        : 0;
     const d = decideDelta({
       priorSeconds: game.totalSeconds,
       priorChangedAt: game.totalChangedAt,
@@ -193,11 +203,38 @@ export class SyncService {
       });
     }
     if (d.updateTotal) {
+      // Tracked play Steam has not reported yet (its total moves at game exit) carries to the next delta.
+      game.trackerCreditSeconds =
+        steam && game.totalSeconds !== null && d.session?.source !== 'import'
+          ? Math.max(0, alreadyTracked - (t.totalSeconds - game.totalSeconds))
+          : 0;
       game.totalSeconds = t.totalSeconds;
       game.totalChangedAt = now;
       game.lastPlayedAt = t.lastPlayedAt ?? game.lastPlayedAt;
       await m.getRepository(LibraryGame).save(game);
     }
+  }
+
+  /** Tracker seconds inside (from, now]; a row extended in place can start before `from`. */
+  private async trackedSince(
+    m: EntityManager,
+    libraryGameId: number,
+    from: Date,
+    now: Date,
+  ): Promise<number> {
+    const rows = await m.getRepository(PlaySession).find({
+      where: { libraryGameId, source: 'tracker', endedAt: MoreThan(from) },
+    });
+    const ms = rows.reduce((a, s) => {
+      const span = s.endedAt.getTime() - s.startedAt.getTime();
+      const inside =
+        Math.min(s.endedAt.getTime(), now.getTime()) -
+        Math.max(s.startedAt.getTime(), from.getTime());
+      return span > 0 && inside > 0
+        ? a + (s.seconds * 1000 * inside) / span
+        : a;
+    }, 0);
+    return Math.round(ms / 1000);
   }
 
   private async fail(
@@ -221,11 +258,15 @@ export class SyncService {
       run.error = message;
       run.finishedAt = new Date();
       await this.runs.save(run);
-      await this.connections.update(conn.id, {
-        status: expired ? 'expired' : 'failing',
-        lastSyncAt: now,
-        lastError: message,
-      });
+      // A secret pasted during the run starts fresh: leave its status alone.
+      await this.connections.update(
+        { id: conn.id, secret: conn.secret ?? IsNull() },
+        {
+          status: expired ? 'expired' : 'failing',
+          lastSyncAt: now,
+          lastError: message,
+        },
+      );
     } catch (e2) {
       this.logger.error(
         `sync ${conn.id} failure bookkeeping failed: ${e2 instanceof Error ? e2.name : 'non-Error'}`,

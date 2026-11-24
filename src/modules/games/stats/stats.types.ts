@@ -34,6 +34,8 @@ export interface Overview {
 export interface SessionRow extends Art {
   id: number;
   libraryGameId: number;
+  /** Group key, same as library and period (`#<libraryGameId>` when the title has none). */
+  titleKey: string;
   title: string;
   platform: Platform;
   source: string;

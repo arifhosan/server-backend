@@ -9,6 +9,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { AuthenticatedUser } from '../../../common/auth/auth.types';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../../common/auth/jwt-auth.guard';
@@ -33,6 +34,8 @@ export class ConnectionsController {
     return this.connections.list(user.userId);
   }
 
+  // Each call hits Steam/PSN: rate-limited like login (ThrottlerModule is global).
+  @UseGuards(ThrottlerGuard)
   @Put('steam')
   steam(
     @CurrentUser() user: AuthenticatedUser,
@@ -41,6 +44,7 @@ export class ConnectionsController {
     return this.connections.connectSteam(user.userId, dto.profile);
   }
 
+  @UseGuards(ThrottlerGuard)
   @Put('psn')
   psn(
     @CurrentUser() user: AuthenticatedUser,
@@ -49,6 +53,7 @@ export class ConnectionsController {
     return this.connections.connectPsn(user.userId, dto.npsso);
   }
 
+  @UseGuards(ThrottlerGuard)
   @Post(':provider/sync')
   sync(
     @CurrentUser() user: AuthenticatedUser,

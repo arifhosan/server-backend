@@ -84,11 +84,21 @@ CREATE TABLE game_icon (
 );
 ```
 
+Steam/tracker dedup (final review C1): tracker seconds Steam has not reported
+yet carry over to the next sync, because a tracker row extended in place can
+span a sync.
+
+```sql
+ALTER TABLE library_game ADD COLUMN trackerCreditSeconds INT NOT NULL DEFAULT 0;
+```
+
 `legacyRef` (`game:<id>` / `game_old:<id>`) makes the legacy import idempotent.
 
 ## Routes
 
 Authoritative list (README points here). Auth: **JWT** = the cookie or `Authorization: Bearer` access token; **device** = `Authorization: Bearer <device token>`.
+
+A cookie-authenticated write (anything but GET/HEAD/OPTIONS) needs an `Origin` whose host equals the `Host` header, else 403 (CSRF); Bearer requests are not checked. Bodies are JSON only, up to 512 KB. Connecting Steam/PSN and sync-now are limited to 10 calls per minute each (429).
 
 | Method and path | Auth | What it does |
 | --- | --- | --- |
@@ -127,6 +137,9 @@ Do these in order.
 4. Deploy the image. The stack also runs the dashboard (`ghcr.io/arifhosan/server-dashboard:latest`, built by `.github/workflows/dashboard-image.yml` on pushes to `master` touching `dashboard/**`); redeploy the stack to pull a new one. It serves `games.server.arifhosan.me/`; `/api/*` still goes to the backend.
 5. Legacy import: dry run, then `--commit` (see below).
 6. Only then connect Steam and PSN; their first sync adopts the legacy rows.
+7. Connect Steam/PSN and let their first sync finish (Connections shows a last
+   success) before creating the first tracker device. The backend also adopts
+   correctly in the other order; this is belt and braces.
 
 The Grafana game dashboards keep reading the untouched legacy tables, which get no new rows from now on.
 
@@ -136,17 +149,34 @@ One-off import of the Exophase-era data (`game`, `game_old`, `total_game_time`)
 into `library_game` / `play_session` for one user. The legacy tables are only
 read, never modified. `playtime` is read for the day check only.
 
+Run it inside the backend container: it needs the built `dist/`, the stack's
+`DB_*` environment and the same database connection settings (`timezone: 'Z'`)
+as the app. Find the container name with
+`docker ps --filter ancestor=ghcr.io/arifhosan/server-backend:latest --format '{{.Names}}'`
+(or Portainer, stack, service `app`). Below, `<backend>` is that name. The run
+boots the whole app context for a few seconds, so its hourly sync cron could
+fire once; before any connection exists it has nothing to do.
+
+0. Check the database clock first:
+   `SELECT @@global.time_zone, @@session.time_zone, NOW(), UTC_TIMESTAMP();`
+   Expect `NOW()` equal to `UTC_TIMESTAMP()` (`time_zone` `+00:00`, `UTC`, or
+   `SYSTEM` on a UTC host). The app writes and reads every DATETIME as UTC, and
+   the legacy `createdAt` values are read as UTC too. If `NOW()` differs, stop:
+   find out in which zone the legacy scraper wrote `createdAt` (compare a recent
+   row with when it was scraped). If it wrote UTC, set the server to UTC
+   (`default-time-zone='+00:00'` in the MySQL config, restart) and re-check. If
+   it wrote local time, do not import until the plan handles that offset.
 1. Back up first and keep the file:
    `mysqldump api_db game game_old total_game_time playtime > legacy-YYYY-MM-DD.sql`
 2. Dry run (default, writes nothing, rolls back):
-   `node dist/modules/games/legacy/run-legacy-import.js --user-id <id>`
+   `docker exec <backend> node dist/modules/games/legacy/run-legacy-import.js --user-id <id>`
 3. Read the JSON report. Expect `game` 840, `game_old` 49, `total_game_time` 282,
    `playtime` 366, no error. Look at `unknownPlatforms` (mapped to `pc_other`)
    and `dayMismatches` (days where `playtime` differs from the sum of `game`
    rows by UTC createdAt date; about 8 are expected). Sources: `exophase`
    counts, `import` (baseline and over-long sessions) is left out of charts,
    `legacy_test` (`game_old`) is left out of totals.
-4. Commit: `node dist/modules/games/legacy/run-legacy-import.js --user-id <id> --commit`.
+4. Commit: `docker exec <backend> node dist/modules/games/legacy/run-legacy-import.js --user-id <id> --commit`.
    Row counts and per-game and per-source seconds are compared with the legacy
    tables inside the transaction; any mismatch aborts and rolls back.
 5. Re-running prints the same counts with `inserted` all 0 (existing rows are

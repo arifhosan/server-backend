@@ -39,6 +39,7 @@ export interface NowPlaying {
   startedAt: Date;
   imageUrl: string | null;
   hasIcon: boolean;
+  iconLibraryGameId: number | null;
 }
 
 export interface TrackerStatus {
@@ -86,13 +87,23 @@ export class TrackerService {
     { store, storeId, title }: HeartbeatGameDto,
     manager?: EntityManager,
   ): Promise<LibraryGame> {
-    const game = await this.library.upsertByExternalId(
-      userId,
-      trackerPlatform(store),
-      storeId ?? folderId(title),
-      title,
-      manager,
-    );
+    const platform = trackerPlatform(store);
+    // A Steam appid adopts a legacy row like the sync does, so the first of the two wins (I1).
+    const game =
+      store === 'steam' && storeId
+        ? await this.library.findOrAdopt(
+            userId,
+            { platform, externalId: storeId, title },
+            manager,
+            false,
+          )
+        : await this.library.upsertByExternalId(
+            userId,
+            platform,
+            storeId ?? folderId(title),
+            title,
+            manager,
+          );
     const url = store === 'steam' && storeId ? steamImageUrl(storeId) : null;
     if (url && game.imageUrl !== url) {
       game.imageUrl = url;

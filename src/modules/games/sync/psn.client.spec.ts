@@ -6,6 +6,7 @@ import {
   getProfileFromUserName,
   getUserPlayedGames,
 } from 'psn-api';
+import { Logger } from '@nestjs/common';
 import { Connection } from '../entities/connection.entity';
 import { SecretExpiredError, SyncFailedError } from './platform-client';
 import {
@@ -247,6 +248,27 @@ describe('PsnClient', () => {
       limit: 200,
       offset: 200,
     });
+  });
+
+  it('skips malformed titles, logs only a count, keeps the rest (M6)', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    mPlayed.mockResolvedValue({
+      totalItemCount: 5,
+      titles: [
+        title(1),
+        { ...title(2), playDuration: 'garbage' },
+        { ...title(3), titleId: '' },
+        { ...title(4), name: ' ' },
+        { ...title(5), playDuration: undefined },
+      ],
+    } as never);
+    const r = await client.fetchTitles(conn, secret());
+    expect(r.titles.map((t) => t.externalId)).toEqual(['PPSA1_00']);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('Skipped 4 malformed PSN titles');
+    warn.mockRestore();
   });
 
   it('wraps psn-api errors in SyncFailedError without tokens', async () => {

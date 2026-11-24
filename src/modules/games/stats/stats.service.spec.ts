@@ -260,6 +260,80 @@ describe('StatsService', () => {
     ).resolves.toBeDefined();
   });
 
+  it('rejects a huge range quickly, before building any day list (I2)', async () => {
+    const t0 = Date.now();
+    await expect(
+      service.period(1, { from: '2000-01-01', to: '2100-12-31' }),
+    ).rejects.toThrow('Range is limited to 366 days');
+    await expect(
+      service.sessions(1, { from: '2000-01-01', to: '2100-12-31' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(Date.now() - t0).toBeLessThan(200);
+  });
+
+  it('years outside 2000-2100 are a 400, never a 500 (I2)', async () => {
+    for (const [from, to] of [
+      ['1000-01-01', '9999-12-30'],
+      ['2026-01-01', '9999-12-31'],
+      ['0099-01-01', '0099-01-02'],
+      ['1999-12-31', '2000-01-01'],
+      ['2101-01-01', '2101-01-01'],
+    ])
+      await expect(service.period(1, { from, to })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    await expect(
+      service.period(1, { from: '2100-12-01', to: '2100-12-31' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('session rows carry the group titleKey, with the #id fallback (M9)', async () => {
+    sess(1, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 3600);
+    sess(2, 'psn', '2026-11-24T09:00:00Z', '2026-11-24T10:00:00Z', 3600);
+    sess(4, 'tracker', '2026-11-24T10:00:00Z', '2026-11-24T11:00:00Z', 3600);
+    const s = await service.sessions(1, {
+      from: '2026-11-24',
+      to: '2026-11-24',
+    });
+    expect(s.map((r) => [r.libraryGameId, r.titleKey])).toEqual([
+      [4, '#4'],
+      [2, 'cyberpunk2077'],
+      [1, 'cyberpunk2077'],
+    ]);
+    const lib = await service.library(1, {});
+    expect(lib.map((e) => e.titleKey)).toEqual(
+      expect.arrayContaining(['cyberpunk2077', '#4']),
+    );
+    const detail = await service.game(1, 2);
+    expect(detail.sessions.map((r) => r.titleKey)).toEqual([
+      'cyberpunk2077',
+      'cyberpunk2077',
+    ]);
+  });
+
+  it('iconLibraryGameId points at the member holding the icon (M10)', async () => {
+    // The group links to steam (1); only the ps5 row (2) has an icon.
+    sess(1, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 3600);
+    icons.push({ libraryGameId: 2 });
+    const want = { hasIcon: true, iconLibraryGameId: 2 };
+    const o = await service.overview(1, now);
+    expect(o.topGames30d[0]).toMatchObject({ libraryGameId: 1, ...want });
+    const lib = await service.library(1, {});
+    expect(lib.find((e) => e.titleKey === 'cyberpunk2077')).toMatchObject(want);
+    expect(lib.find((e) => e.titleKey === 'trackeronly')).toMatchObject({
+      hasIcon: false,
+      iconLibraryGameId: null,
+    });
+    expect(await service.game(1, 1)).toMatchObject(want);
+    const s = await service.sessions(1, {
+      from: '2026-11-24',
+      to: '2026-11-24',
+    });
+    expect(s[0]).toMatchObject(want);
+    const p = await service.period(1, { from: '2026-11-24', to: '2026-11-24' });
+    expect(p.games[0]).toMatchObject(want);
+  });
+
   it('game detail returns the group, daily series and sessions', async () => {
     sess(1, 'tracker', '2026-11-24T08:00:00Z', '2026-11-24T09:00:00Z', 3600);
     sess(2, 'psn', '2026-11-23T08:00:00Z', '2026-11-23T09:00:00Z', 600);

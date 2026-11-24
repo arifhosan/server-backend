@@ -33,15 +33,30 @@ describe('art', () => {
     expect(pickArt(members, new Set([4]))).toEqual({
       imageUrl: 'steam.jpg',
       hasIcon: true,
+      iconLibraryGameId: 4,
     });
     expect(pickArt(members.slice(0, 2), new Set())).toEqual({
       imageUrl: 'ps5.jpg',
       hasIcon: false,
+      iconLibraryGameId: null,
     });
     expect(
       pickArt([g(3, 'steam', null), g(1, 'ps4', 'ps4.jpg')], new Set())
         .imageUrl,
     ).toBe('ps4.jpg');
     expect(pickArt([g(4, 'epic', null)], new Set()).imageUrl).toBeNull();
+  });
+
+  it('iconLibraryGameId names the member that holds the icon, not the first one (M10)', () => {
+    const g = (id: number, platform: string) =>
+      ({ id, platform, imageUrl: null }) as LibraryGame;
+    // The group links to steam (id 3) but only the epic row has an icon.
+    const art = pickArt([g(3, 'steam'), g(9, 'epic')], new Set([9]));
+    expect(art).toMatchObject({ hasIcon: true, iconLibraryGameId: 9 });
+    // Two icons: preference order, then lowest id.
+    expect(
+      pickArt([g(8, 'epic'), g(5, 'pc_other'), g(2, 'ps5')], new Set([8, 5]))
+        .iconLibraryGameId,
+    ).toBe(5);
   });
 });

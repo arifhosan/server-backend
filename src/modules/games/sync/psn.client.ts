@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AuthTokensResponse,
   exchangeAccessCodeForAuthTokens,
@@ -96,8 +96,36 @@ const fromNpsso = (npsso: string) =>
     exchangeAccessCodeForAuthTokens(await exchangeNpssoForAccessCode(npsso)),
   );
 
+type PlayedTitle = Awaited<
+  ReturnType<typeof getUserPlayedGames>
+>['titles'][number];
+
+/** Null for a title without a usable id, name or duration (M6: skipped, not fatal). */
+export function toObserved(t: PlayedTitle): ObservedTitle | null {
+  const name = typeof t?.name === 'string' ? t.name.trim() : '';
+  if (!t?.titleId || typeof t.titleId !== 'string' || !name) return null;
+  let totalSeconds: number;
+  try {
+    totalSeconds = parseIsoDuration(t.playDuration);
+  } catch {
+    return null;
+  }
+  return {
+    platform: psnPlatform(t.category),
+    externalId: t.titleId,
+    title: name,
+    imageUrl: t.imageUrl || undefined,
+    totalSeconds,
+    lastPlayedAt: t.lastPlayedDateTime
+      ? new Date(t.lastPlayedDateTime)
+      : undefined,
+  };
+}
+
 @Injectable()
 export class PsnClient implements PlatformClient {
+  private readonly logger = new Logger(PsnClient.name);
+
   async connect(
     npsso: string,
   ): Promise<{ secret: PsnSecret; accountId: string; onlineId: string }> {
@@ -153,6 +181,7 @@ export class PsnClient implements PlatformClient {
     }
 
     const titles: ObservedTitle[] = [];
+    let skipped = 0;
     try {
       const auth = { accessToken: s.accessToken };
       let total = Infinity;
@@ -163,21 +192,16 @@ export class PsnClient implements PlatformClient {
         });
         total = page.totalItemCount;
         if (!page.titles.length) break;
-        for (const t of page.titles)
-          titles.push({
-            platform: psnPlatform(t.category),
-            externalId: t.titleId,
-            title: t.name,
-            imageUrl: t.imageUrl || undefined,
-            totalSeconds: parseIsoDuration(t.playDuration),
-            lastPlayedAt: t.lastPlayedDateTime
-              ? new Date(t.lastPlayedDateTime)
-              : undefined,
-          });
+        for (const t of page.titles) {
+          const title = toObserved(t);
+          if (title) titles.push(title);
+          else skipped++;
+        }
       }
     } catch {
       throw new SyncFailedError('PSN played-games request failed.');
     }
+    if (skipped) this.logger.warn(`Skipped ${skipped} malformed PSN titles`);
 
     return refreshed
       ? {
