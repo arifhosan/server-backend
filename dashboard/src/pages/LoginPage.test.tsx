@@ -22,6 +22,8 @@ function mockBackend(opts: { loginStatus?: number } = {}) {
     }
     if (key === 'POST /api/auth/register') return reply(201, ME);
     if (key === 'GET /api/games/now') return reply(200, []);
+    if (key === 'GET /api/games/library') return reply(200, []);
+    if (url.startsWith('/api/games/period?')) return reply(200, { days: [], games: [], dayGames: [] });
     if (key === 'GET /api/games/overview')
       return reply(200, {
         nowPlaying: [], today: 0, thisWeek: 0, lastWeek: 0, last30Days: [], topGames30d: [],

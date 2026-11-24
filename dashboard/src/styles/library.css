@@ -1,0 +1,51 @@
+.chip-plat { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+.chip-steam { background: var(--chip-steam-bg); color: var(--chip-steam-fg); }
+.chip-ps5, .chip-ps4 { background: var(--chip-ps-bg); color: var(--chip-ps-fg); }
+.chip-xbox_pc { background: var(--chip-xbox-bg); color: var(--chip-xbox-fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.page { display: flex; flex-direction: column; gap: 20px; }
+.page h1 { margin: 0; font-size: 28px; font-weight: 600; }
+.page-sub { margin: 4px 0 0; color: var(--muted); }
+.page-note { margin: 0; color: var(--faint); font-size: 13px; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.page-head > div { flex: 1 1 260px; }
+.lib-field { display: flex; flex-direction: column; gap: 6px; flex: 0 1 320px; color: var(--muted); font-size: 13px; }
+.lib-field input {
+  font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--field-border);
+  border-radius: 8px; padding: 0 12px; min-height: 44px;
+}
+.filter-chip {
+  font: inherit; font-size: 13px; font-weight: 500; border-radius: 999px; padding: 0 14px; min-height: 44px;
+  cursor: pointer; border: 1px solid var(--field-border); background: transparent; color: var(--muted);
+}
+.filter-chip[aria-pressed='true'] { background: #1e2b40; border-color: #3b5f94; color: var(--text); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.table-card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); overflow-x: auto; }
+.table-card table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.table-card th { padding: 6px 12px; text-align: left; }
+.table-card th.num, .table-card td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-card td { padding: 10px 12px; border-top: 1px solid var(--card-border); vertical-align: middle; }
+.th {
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+}
+.th:hover { color: var(--text); }
+.th-static { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.arrow { color: var(--link); width: 10px; }
+.table-card tbody tr { position: relative; }
+.table-card tbody tr:hover { background: #1a1e27; }
+.game-cell { display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 380px; }
+.row-link { color: var(--text); text-decoration: none; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-link:hover { color: var(--link-hover); }
+/* Stretch the title link over the whole row so the row is clickable without a handler on <tr>. */
+.row-link::after { content: ''; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.row-link:focus-visible::after { outline: var(--focus); outline-offset: -2px; }
+.muted-cell { color: var(--text-label); }
+
+/* hero size for GameArt (base .art rules live in overview.css) */
+.art-xl { width: 368px; max-width: 100%; height: auto; aspect-ratio: 460 / 215; border-radius: 12px; }
+.art-xl.art-tile { font-size: 40px; }

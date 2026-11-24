@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
 import { Spinner } from './components/Spinner';
+import { GamePage } from './pages/GamePage';
+import { LibraryPage } from './pages/LibraryPage';
 import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PeriodPage } from './pages/PeriodPage';
@@ -25,8 +27,8 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route index element={<OverviewPage />} />
-        <Route path="library" element={<Page title="Library" />} />
-        <Route path="games/:id" element={<Page title="Game" />} />
+        <Route path="library" element={<LibraryPage />} />
+        <Route path="games/:id" element={<GamePage />} />
         <Route path="period" element={<PeriodPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Page title="Not found" />} />

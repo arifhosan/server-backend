@@ -1,3 +1,4 @@
+import '../styles/library.css';
 import { useState } from 'react';
 import '../styles/overview.css';
 
@@ -8,7 +9,7 @@ interface Props {
   hasIcon: boolean;
   libraryGameId: number;
   title: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 /** Cover image, else the game's icon, else an initials tile. A failed image falls back to the tile. */
