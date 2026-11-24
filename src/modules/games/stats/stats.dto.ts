@@ -19,13 +19,14 @@ const PLATFORMS: Platform[] = [
   'ps5',
   'ps4',
 ];
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** YYYY-MM-DD in years 2000-2100, like the calendar route. */
+export const DAY = /^(20\d\d|2100)-\d{2}-\d{2}$/;
 
 export class PeriodQueryDto {
-  @Matches(DAY, { message: 'from must be YYYY-MM-DD' })
+  @Matches(DAY, { message: 'from must be YYYY-MM-DD in 2000-2100' })
   from: string;
 
-  @Matches(DAY, { message: 'to must be YYYY-MM-DD' })
+  @Matches(DAY, { message: 'to must be YYYY-MM-DD in 2000-2100' })
   to: string;
 
   @IsOptional()

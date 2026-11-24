@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Connection } from '../entities/connection.entity';
@@ -31,6 +31,8 @@ export function parseSteamProfileInput(
 
 @Injectable()
 export class SteamClient implements PlatformClient {
+  private readonly logger = new Logger(SteamClient.name);
+
   constructor(private readonly config: ConfigService) {}
 
   /** Never put the URL, the axios message or the key into an error: the key is in the query string. */
@@ -94,17 +96,36 @@ export class SteamClient implements PlatformClient {
     const games =
       d.response?.games ?? (d.response?.game_count === 0 ? [] : undefined);
     if (!games) throw new SteamPrivateProfileError();
-    return {
-      titles: games.map((g) => ({
+    // One malformed entry must not fail the whole sync (M6).
+    const titles: ObservedTitle[] = [];
+    for (const g of games) {
+      const appid = Number(g?.appid);
+      const name = typeof g?.name === 'string' ? g.name.trim() : '';
+      const minutes = g?.playtime_forever;
+      if (
+        !Number.isSafeInteger(appid) ||
+        appid <= 0 ||
+        !name ||
+        typeof minutes !== 'number' ||
+        !Number.isFinite(minutes) ||
+        minutes < 0
+      )
+        continue;
+      titles.push({
         platform: 'steam',
-        externalId: String(g.appid),
-        title: g.name,
-        imageUrl: steamImageUrl(String(g.appid)),
-        totalSeconds: g.playtime_forever * 60,
+        externalId: String(appid),
+        title: name,
+        imageUrl: steamImageUrl(String(appid)),
+        totalSeconds: Math.round(minutes * 60),
         lastPlayedAt: g.rtime_last_played
           ? new Date(g.rtime_last_played * 1000)
           : undefined,
-      })),
-    };
+      });
+    }
+    if (titles.length < games.length)
+      this.logger.warn(
+        `Skipped ${games.length - titles.length} malformed Steam titles`,
+      );
+    return { titles };
   }
 }

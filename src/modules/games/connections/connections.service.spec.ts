@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Connection } from '../entities/connection.entity';
 import { PsnClient, PsnSecret } from '../sync/psn.client';
+import { SyncFailedError } from '../sync/platform-client';
 import { SteamClient, SteamPrivateProfileError } from '../sync/steam.client';
 import { SyncService } from '../sync/sync.service';
 import { openSecret } from '../utils/secret-box';
@@ -110,6 +111,32 @@ describe('ConnectionsService', () => {
     expect((err as Error).message).toBe(new SteamPrivateProfileError().message);
     expect(repo.save).not.toHaveBeenCalled();
     expect(sync.syncConnection).not.toHaveBeenCalled();
+  });
+
+  it('every Steam connect failure is a 400 with its fixed text (M2)', async () => {
+    const cases: [jest.Mock, string][] = [
+      [steam.resolveSteamId, 'Steam profile not found'],
+      [steam.profile, 'Steam profile not found'],
+      [steam.fetchTitles, 'Steam API error (HTTP 500)'],
+      [steam.resolveSteamId, 'Steam API unreachable'],
+    ];
+    for (const [fn, text] of cases) {
+      fn.mockRejectedValueOnce(new SyncFailedError(text));
+      const err: unknown = await service
+        .connectSteam(1, 'gabe')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as Error).message).toBe(text);
+    }
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('an unexpected Steam connect error is not turned into a 400', async () => {
+    steam.profile.mockRejectedValueOnce(new Error('internal'));
+    const err: unknown = await service
+      .connectSteam(1, 'gabe')
+      .catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(BadRequestException);
   });
 
   it('a rejected NPSSO is a 400 with the fixed text', async () => {

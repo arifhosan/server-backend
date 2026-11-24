@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import { Connection } from '../entities/connection.entity';
 import { SyncFailedError } from './platform-client';
@@ -63,6 +64,37 @@ describe('SteamClient', () => {
         lastPlayedAt: new Date(1795500000 * 1000),
       },
     ]);
+  });
+
+  it('skips malformed titles, logs only a count, keeps the rest (M6)', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const ok = { appid: 1, name: 'Good', playtime_forever: 2 };
+    get.mockResolvedValue({
+      data: {
+        response: {
+          games: [
+            ok,
+            { appid: 2, name: '  ', playtime_forever: 1 },
+            { appid: 3, playtime_forever: 1 },
+            { name: 'No id', playtime_forever: 1 },
+            { appid: 'x', name: 'Bad id', playtime_forever: 1 },
+            { appid: 5, name: 'No time' },
+            { appid: 6, name: 'Negative', playtime_forever: -1 },
+            { appid: 7, name: 'NaN', playtime_forever: 'abc' },
+            null,
+          ],
+        },
+      },
+    });
+    const { titles } = await client.fetchTitles(conn);
+    expect(titles.map((t) => [t.externalId, t.title, t.totalSeconds])).toEqual([
+      ['1', 'Good', 120],
+    ]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('Skipped 8 malformed Steam titles');
+    warn.mockRestore();
   });
 
   it('treats an empty response as a private profile', async () => {

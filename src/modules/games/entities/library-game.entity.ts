@@ -35,4 +35,8 @@ export class LibraryGame {
 
   @Column({ type: 'varchar', length: 512, nullable: true })
   imageUrl: string | null;
+
+  /** Steam only: tracker seconds already seen that Steam's total has not caught up with yet (rows extended in place span syncs). */
+  @Column({ type: 'int', default: 0 })
+  trackerCreditSeconds: number;
 }

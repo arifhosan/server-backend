@@ -8,6 +8,8 @@ const PREFERENCE = ['steam', 'ps5', 'ps4'];
 export interface Art {
   imageUrl: string | null;
   hasIcon: boolean;
+  /** The platform row that holds the icon (build the icon URL from this), null when none. */
+  iconLibraryGameId: number | null;
 }
 
 export const MAX_ICON_BYTES = 65_536;
@@ -39,8 +41,12 @@ export function pickArt(
   const withImage = members
     .filter((m) => m.imageUrl)
     .sort((a, b) => rank(a.platform) - rank(b.platform))[0];
+  const withIcon = members
+    .filter((m) => iconIds.has(m.id))
+    .sort((a, b) => rank(a.platform) - rank(b.platform) || a.id - b.id)[0];
   return {
     imageUrl: withImage?.imageUrl ?? null,
-    hasIcon: members.some((m) => iconIds.has(m.id)),
+    hasIcon: !!withIcon,
+    iconLibraryGameId: withIcon?.id ?? null,
   };
 }

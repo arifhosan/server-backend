@@ -28,6 +28,7 @@ import {
   splitIntoDays,
   unknownDays,
 } from './day-split';
+import { DAY } from './stats.dto';
 import {
   DayPoint,
   GameDetail,
@@ -45,10 +46,12 @@ const groupKey = (g: LibraryGame) => g.titleKey || `#${g.id}`;
 
 function checkDay(s: string): void {
   if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(s) ||
+    !DAY.test(s) ||
     new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) !== s
   )
-    throw new BadRequestException(`Invalid date ${s}, expected YYYY-MM-DD`);
+    throw new BadRequestException(
+      `Invalid date ${s}, expected YYYY-MM-DD in 2000-2100`,
+    );
 }
 
 function days(from: string, to: string): string[] {
@@ -57,11 +60,12 @@ function days(from: string, to: string): string[] {
   return out;
 }
 
+/** Checked arithmetically, before any day list is built. */
 function checkRange(from: string, to: string): void {
   checkDay(from);
   checkDay(to);
   if (from > to) throw new BadRequestException('from must not be after to');
-  if (days(from, to).length > MAX_DAYS)
+  if ((Date.parse(to) - Date.parse(from)) / 86_400_000 + 1 > MAX_DAYS)
     throw new BadRequestException(`Range is limited to ${MAX_DAYS} days`);
 }
 
@@ -340,6 +344,7 @@ export class StatsService {
       startedAt: s.startedAt,
       endedAt: s.endedAt,
       seconds: s.seconds,
+      titleKey: groupKey(g),
       ...artOf(groupKey(g)),
     };
   }

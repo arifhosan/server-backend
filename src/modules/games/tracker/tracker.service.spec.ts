@@ -11,6 +11,7 @@ import { TrackerService, trackerPlatform } from './tracker.service';
 
 type Row = Record<string, unknown>;
 const op = (v: unknown) => (v as FindOperator<Date>).value;
+const LEGACY_AT = new Date('2026-11-21T00:00:00Z');
 
 const PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -39,6 +40,16 @@ describe('TrackerService', () => {
       { id: 1, name: 'PC' } as Device,
       { id: 2, name: 'Laptop' } as Device,
     ];
+    // Equality, plus `Like('legacy:%')` as a prefix match.
+    const matchGame = (w: Row) =>
+      gameRows.find((g) =>
+        Object.entries(w).every(([k, v]) => {
+          const val = (g as unknown as Row)[k];
+          return v instanceof FindOperator
+            ? String(val).startsWith(String(v.value).slice(0, -1))
+            : val === v;
+        }),
+      ) ?? null;
     const gameRepo = {
       create: (d: Row) => d as unknown as LibraryGame,
       save: (g: LibraryGame) => {
@@ -48,12 +59,8 @@ describe('TrackerService', () => {
         }
         return Promise.resolve(g);
       },
-      findOneBy: (w: Row) =>
-        Promise.resolve(
-          gameRows.find((g) =>
-            Object.entries(w).every(([k, v]) => (g as unknown as Row)[k] === v),
-          ) ?? null,
-        ),
+      findOneBy: (w: Row) => Promise.resolve(matchGame(w)),
+      findOne: ({ where }: { where: Row }) => Promise.resolve(matchGame(where)),
       update: (id: number, p: Partial<LibraryGame>) => {
         Object.assign(
           gameRows.find((g) => g.id === id)!,
@@ -220,6 +227,7 @@ describe('TrackerService', () => {
         imageUrl:
           'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg',
         hasIcon: false,
+        iconLibraryGameId: null,
       },
     ]);
   });
@@ -227,7 +235,69 @@ describe('TrackerService', () => {
   it('nowPlaying reports an uploaded icon', async () => {
     await service.ingest(dev(1), [hb(0)], now);
     await service.saveIcon(7, hb(0).game, PNG);
-    expect((await service.nowPlaying(7, now))[0].hasIcon).toBe(true);
+    expect((await service.nowPlaying(7, now))[0]).toMatchObject({
+      hasIcon: true,
+      iconLibraryGameId: 1,
+    });
+  });
+
+  describe('Steam legacy adoption before the first Steam sync (I1)', () => {
+    const legacy = (o: Partial<LibraryGame> = {}) =>
+      gameRows.push({
+        id: gameRows.length + 1,
+        userId: 7,
+        platform: 'steam',
+        externalId: 'legacy:42',
+        title: 'Hades (Exophase)',
+        titleKey: 'hades',
+        totalSeconds: 36_000,
+        totalChangedAt: LEGACY_AT,
+        lastPlayedAt: null,
+        imageUrl: null,
+        ...o,
+      } as LibraryGame);
+
+    it('a heartbeat adopts the legacy row and keeps its baseline and title', async () => {
+      legacy();
+      await service.ingest(dev(1), [hb(0)], now);
+      expect(gameRows).toHaveLength(1);
+      expect(gameRows[0]).toMatchObject({
+        externalId: '1145360',
+        title: 'Hades (Exophase)',
+        totalSeconds: 36_000,
+        totalChangedAt: LEGACY_AT,
+      });
+      expect(sessionRows[0].libraryGameId).toBe(gameRows[0].id);
+    });
+
+    it('an icon upload adopts it too', async () => {
+      legacy();
+      await service.saveIcon(7, hb(0).game, PNG);
+      expect(gameRows).toHaveLength(1);
+      expect(iconRows[0].libraryGameId).toBe(gameRows[0].id);
+    });
+
+    it('does not adopt another platform or an empty titleKey', async () => {
+      legacy({ platform: 'ps5' });
+      legacy({ externalId: 'legacy:43', title: '原神', titleKey: '' });
+      await service.ingest(dev(1), [hb(0), hb(0, '原神', '999')], now);
+      expect(gameRows.map((g) => g.externalId)).toEqual([
+        'legacy:42',
+        'legacy:43',
+        '1145360',
+        '999',
+      ]);
+    });
+
+    it('non-Steam stores never adopt', async () => {
+      legacy({ platform: 'pc_other', titleKey: 'my game' });
+      await service.ingest(
+        dev(1),
+        [{ at: now.toISOString(), game: { store: 'other', title: 'My Game' } }],
+        now,
+      );
+      expect(gameRows).toHaveLength(2);
+    });
   });
 
   describe('saveIcon', () => {
