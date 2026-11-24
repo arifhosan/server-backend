@@ -2,6 +2,8 @@ import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import {
   AuditGame,
+  AuditInput,
+  AuditSession,
   LibraryAuditCliModule,
   LibraryAuditService,
   buildAudit,
@@ -24,116 +26,193 @@ describe('LibraryAuditCliModule', () => {
     const query = jest.fn().mockResolvedValue([]);
     const svc = new LibraryAuditService({ query } as unknown as DataSource);
     await svc.run(2);
+    expect(query).toHaveBeenCalledTimes(4);
     for (const [sql] of query.mock.calls as [string][])
       expect(sql.trimStart().startsWith('SELECT')).toBe(true);
   });
 });
 
 describe('buildAudit', () => {
-  const g = (o: Partial<AuditGame> & Pick<AuditGame, 'id' | 'title'>) => ({
-    platform: 'ps5' as const,
+  const g = (
+    o: Partial<AuditGame> & Pick<AuditGame, 'id' | 'title'>,
+  ): AuditGame => ({
+    platform: 'ps4',
     externalId: `legacy:${o.id}`,
     titleKey: '',
     totalSeconds: null,
     ...o,
   });
-
   const scrape = new Date('2026-11-21T23:00:00Z');
   const april = new Date('2025-04-29T00:00:00Z');
-  const firstSync = {
-    libraryGameId: 2,
-    source: 'psn' as const,
-    legacyRef: null,
-    startedAt: april,
-    endedAt: new Date('2026-11-24T12:00:00Z'),
-  };
+  const end = new Date('2026-11-24T12:00:00Z');
+  const session = (
+    id: number,
+    libraryGameId: number,
+    source: AuditSession['source'],
+    seconds: number,
+    startedAt = april,
+    endedAt = end,
+  ): AuditSession => ({
+    id,
+    libraryGameId,
+    source,
+    seconds,
+    startedAt,
+    endedAt,
+  });
+  const input = (o: Partial<AuditInput> = {}): AuditInput => ({
+    games: [
+      // Synced rows.
+      g({
+        id: 1,
+        title: 'Cyberpunk 2077',
+        platform: 'ps5',
+        externalId: 'PPSA04029_00',
+        totalSeconds: h(113.8),
+      }),
+      g({
+        id: 2,
+        title: 'Cyberpunk 2077',
+        platform: 'ps5',
+        externalId: 'CUSA18278_00',
+        totalSeconds: h(52),
+      }),
+      g({
+        id: 3,
+        title: 'Netflix',
+        externalId: 'CUSA00127_00',
+        totalSeconds: h(208),
+      }),
+      g({
+        id: 4,
+        title: 'God of War Ragnarök',
+        platform: 'ps5',
+        externalId: 'CUSA34384_00',
+        totalSeconds: h(51.5),
+      }),
+      g({
+        id: 5,
+        title: 'God of War Ragnarök',
+        platform: 'ps5',
+        externalId: 'PPSA08329_00',
+        totalSeconds: h(51.5),
+      }),
+      // Unadopted legacy rows.
+      g({
+        id: 6,
+        title: 'Cyberpunk 2077',
+        totalSeconds: h(52),
+        titleKey: 'cyberpunk 2077',
+      }),
+      g({
+        id: 7,
+        title: 'Far Cry 6',
+        platform: 'ps5',
+        totalSeconds: h(13.1),
+        titleKey: 'far cry 6',
+      }),
+      g({
+        id: 8,
+        title: 'Bitburner',
+        platform: 'steam',
+        totalSeconds: h(572),
+        titleKey: 'bitburner',
+      }),
+    ],
+    sessions: [
+      session(1, 6, 'exophase', h(3), new Date('2026-11-20T23:00:00Z'), scrape),
+      session(2, 1, 'psn', 40), // first-sync noise
+      session(3, 1, 'psn', h(1)),
+    ],
+    oldTotals: [
+      { title: 'Cyberpunk 2077', totalMs: h(52) },
+      { title: 'Far Cry 6', totalMs: h(13.1) },
+      { title: 'Bitburner', totalMs: h(572) },
+    ],
+    providers: ['psn', 'steam'],
+    ...o,
+  });
 
-  it('shows old vs now vs after-repair totals and the planned actions', () => {
-    const report = buildAudit({
-      games: [
-        g({
-          id: 1,
-          title: 'Cyberpunk 2077',
-          platform: 'ps4',
-          totalSeconds: h(40),
-          titleKey: 'cyberpunk 2077',
-        }),
-        g({
-          id: 2,
-          title: 'Cyberpunk 2077',
-          externalId: 'CUSA18278_00',
-          totalSeconds: h(52),
-        }),
-        g({
-          id: 3,
-          title: 'Netflix',
-          platform: 'ps4',
-          externalId: 'CUSA00127_00',
-          totalSeconds: h(208),
-        }),
-        g({ id: 4, title: 'Bloodborne', titleKey: 'bloodborne' }),
-      ],
-      sessions: [
-        {
-          id: 1,
-          libraryGameId: 4,
-          source: 'exophase',
-          legacyRef: 'game:1',
-          startedAt: new Date('2026-11-20T23:00:00Z'),
-          endedAt: scrape,
-          seconds: h(3),
-        },
-        {
-          id: 2,
-          libraryGameId: 4,
-          source: 'legacy_test',
-          legacyRef: 'game_old:1',
-          startedAt: april,
-          endedAt: april,
-          seconds: h(9),
-        },
-        // First-sync noise on game 2: windowed from the April 2025 baseline.
-        { ...firstSync, id: 3, seconds: 40 },
-        { ...firstSync, id: 4, seconds: h(1) },
-      ],
-      oldTotals: [{ title: 'Cyberpunk 2077', totalMs: h(40) }],
-    });
-    expect(report.totalsHours).toEqual({ old: 40, now: 303, afterRepair: 55 });
-    expect(report.rekey).toEqual([
-      { id: 2, from: '', to: 'cyberpunk 2077' },
-      { id: 3, from: '', to: 'netflix' },
+  it('lists folds with their rule, unmatched legacy rows, apps, cross-gen pairs, noise and totals', () => {
+    const r = buildAudit(input());
+    const fold = (f: (typeof r.legacyFolds)[number]) => [
+      f.rule,
+      f.legacy.id,
+      f.legacy.title,
+      f.into.id,
+      f.into.externalId,
+    ];
+    expect(r.legacyFolds.map(fold)).toEqual([
+      ['R1', 6, 'Cyberpunk 2077', 2, 'CUSA18278_00'],
     ]);
-    expect(report.actions).toEqual([
-      { kind: 'relabel', id: 2, platform: 'ps4' },
-      { kind: 'delete', id: 3, why: 'app' },
+    expect(r.unmatchedLegacy).toEqual([
       expect.objectContaining({
-        kind: 'adopt',
-        dupId: 2,
-        legacyId: 1,
-        by: 'title',
+        id: 7,
+        title: 'Far Cry 6',
+        repairedByAConnection: true,
+      }),
+      expect.objectContaining({
+        id: 8,
+        title: 'Bitburner',
+        repairedByAConnection: true,
       }),
     ]);
-    expect(report.groups[0]).toEqual(
-      expect.objectContaining({
-        titleKey: 'netflix',
-        oldHours: 0,
-        nowHours: 208,
-        afterHours: 0,
-      }),
+    expect(r.mediaApps.map((a) => [a.action, a.game.id, a.game.title])).toEqual(
+      [['delete', 3, 'Netflix']],
     );
-    expect(report.sessions).toEqual({
+    expect(
+      r.crossGenPairs.map((p) => [
+        p.action,
+        p.dropped.id,
+        p.dropped.externalId,
+        p.keptExternalId,
+      ]),
+    ).toEqual([['delete', 4, 'CUSA34384_00', 'PPSA08329_00']]);
+    expect(r.relabels.map((x) => [x.id, x.to])).toEqual([
+      [2, 'ps4'],
+      [4, 'ps4'],
+    ]);
+    expect(r.noiseSessions).toEqual({
       lastLegacyScrapeAt: scrape,
       deleteCount: 1,
       deleteHours: 0,
       rewindowCount: 1,
       repairs: [
-        { kind: 'deleteSession', id: 3, seconds: 40 },
-        { kind: 'rewindow', id: 4, startedAt: scrape, source: 'psn' },
+        { kind: 'deleteSession', id: 2, seconds: 40 },
+        { kind: 'rewindow', id: 3, startedAt: scrape, source: 'psn' },
       ],
     });
-    expect(report.unadoptedLegacy).toEqual([
-      expect.objectContaining({ id: 1, adoptedByRepair: true }),
-      expect.objectContaining({ id: 4, adoptedByRepair: false }),
-    ]);
+    // now: 113.8 + 52 + 208 + 51.5 + 51.5 + 52 + 13.1 + 572; after: Netflix, the Ragnarok twin
+    // and the folded Cyberpunk legacy row are gone.
+    expect(r.totalsHours).toEqual({
+      old: 637.1,
+      now: 1113.9,
+      afterRepair: 802.4,
+    });
+  });
+
+  it('Bitburner folds once Steam lists appid 1812820; without a Steam connection it is not repaired', () => {
+    const withSteamRow = input();
+    withSteamRow.games.push(
+      g({
+        id: 9,
+        title: 'Bitburner',
+        platform: 'steam',
+        externalId: '1812820',
+        totalSeconds: h(572.05),
+      }),
+    );
+    expect(
+      buildAudit(withSteamRow).legacyFolds.map((f) => [
+        f.rule,
+        f.legacy.id,
+        f.into.externalId,
+      ]),
+    ).toContainEqual(['R1', 8, '1812820']);
+
+    const psnOnly = buildAudit(input({ providers: ['psn'] }));
+    expect(psnOnly.unmatchedLegacy).toContainEqual(
+      expect.objectContaining({ id: 8, repairedByAConnection: false }),
+    );
   });
 });

@@ -1,18 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Like, Repository } from 'typeorm';
+import { EntityManager, Like, Repository } from 'typeorm';
 import { GameIcon } from '../entities/game-icon.entity';
 import { LibraryGame } from '../entities/library-game.entity';
 import { PlaySession } from '../entities/play-session.entity';
 import { Platform } from '../games.types';
 import type { ObservedTitle } from '../sync/platform-client';
 import { titleKey } from '../utils/title-key';
-import { matchLegacyByTotal } from './legacy-match';
 
 @Injectable()
 export class LibraryService {
-  private readonly logger = new Logger(LibraryService.name);
-
   constructor(
     @InjectRepository(LibraryGame)
     private readonly repo: Repository<LibraryGame>,
@@ -62,14 +59,10 @@ export class LibraryService {
    * total as the baseline); else creates. Used by the sync (`fromSync`) and by tracker Steam
    * games, so whichever comes first adopts. A sync also folds a tracker-created row (no total
    * yet) into a matching legacy row: sessions and icon move over, the duplicate is deleted.
-   * A new synced title (`totalSeconds` given) with no title match adopts the one legacy row of
-   * its platform family with an almost equal total and a similar title (`matchLegacyByTotal`).
    */
   async findOrAdopt(
     userId: number,
-    o: Pick<ObservedTitle, 'platform' | 'externalId' | 'title'> & {
-      totalSeconds?: number;
-    },
+    o: Pick<ObservedTitle, 'platform' | 'externalId' | 'title'>,
     manager?: EntityManager,
     fromSync = true,
   ): Promise<LibraryGame> {
@@ -79,7 +72,7 @@ export class LibraryService {
     const exists = await repo.findOneBy({ userId, platform, externalId });
     const canAdopt =
       key !== '' && (!exists || (fromSync && exists.totalSeconds === null));
-    let legacy = canAdopt
+    const legacy = canAdopt
       ? await repo.findOne({
           where: {
             userId,
@@ -90,26 +83,6 @@ export class LibraryService {
           order: { id: 'ASC' },
         })
       : null;
-    if (!legacy && canAdopt && !exists && o.totalSeconds !== undefined) {
-      const family: Platform[] =
-        platform === 'ps4' || platform === 'ps5' ? ['ps4', 'ps5'] : [platform];
-      const hits = matchLegacyByTotal(
-        key,
-        o.totalSeconds,
-        await repo.find({
-          where: {
-            userId,
-            platform: In(family),
-            externalId: Like('legacy:%'),
-          },
-        }),
-      );
-      if (hits.length > 1)
-        this.logger.warn(
-          `${platform} ${externalId}: several legacy rows match its total (${hits.map((h) => h.id).join(', ')}); none adopted`,
-        );
-      if (hits.length === 1) legacy = hits[0];
-    }
     if (!legacy)
       return this.upsertByExternalId(
         userId,
@@ -121,11 +94,7 @@ export class LibraryService {
       );
     if (exists) await this.fold(exists, legacy, manager ?? this.repo.manager);
     legacy.externalId = externalId;
-    legacy.platform = platform; // a total match may cross ps4/ps5
-    if (fromSync) {
-      legacy.title = title;
-      legacy.titleKey = key;
-    }
+    if (fromSync) legacy.title = title;
     return repo.save(legacy);
   }
 

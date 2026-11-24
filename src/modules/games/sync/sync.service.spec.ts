@@ -491,16 +491,23 @@ describe('SyncService', () => {
       ]);
     });
 
-    it('the repair folds a synced row with a total too, catching up from the legacy baseline', async () => {
+    it('the repair folds the legacy row into a synced row with a total (its total stays)', async () => {
       // Arises when titleKeys change (apostrophes) or legacy rows arrive after the first sync.
       conn();
       jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
       const legacy = game({
         externalId: 'legacy:42',
         titleKey: 'cyberpunk 2077',
-        totalSeconds: 100,
+        totalSeconds: 7000,
       });
-      game({
+      sessions.push({
+        id: 9,
+        libraryGameId: legacy.id,
+        source: 'exophase',
+        legacyRef: 'game:9',
+        seconds: 600,
+      });
+      const synced = game({
         externalId: '1091500',
         titleKey: 'cyberpunk 2077',
         totalSeconds: 7200,
@@ -510,13 +517,13 @@ describe('SyncService', () => {
       await service.syncConnection(1, now);
       expect(games).toEqual([
         expect.objectContaining({
-          id: legacy.id,
+          id: synced.id,
           externalId: '1091500',
           totalSeconds: 7200,
         }),
       ]);
       expect(sessions).toEqual([
-        expect.objectContaining({ source: 'import', seconds: 7100 }),
+        expect.objectContaining({ id: 9, libraryGameId: synced.id }),
       ]);
       jest.restoreAllMocks();
     });
@@ -584,39 +591,43 @@ describe('SyncService', () => {
     });
     afterEach(() => jest.restoreAllMocks());
 
-    it('relabels, folds into legacy, drops the cross-gen twin and apps; a second sync changes nothing', async () => {
+    it('relabels, folds legacy rows in, drops the cross-gen twin and apps; a second sync changes nothing', async () => {
       const adopted = synced({
         platform: 'ps5',
         externalId: 'PPSA04029_00',
         title: 'Cyberpunk 2077',
         totalSeconds: h(113.8),
       });
-      sessions.push({
-        id: 1,
-        libraryGameId: adopted.id,
-        source: 'import',
-        legacyRef: 'game:1',
-        seconds: h(100),
-        startedAt: legacyAt,
-        endedAt: legacyAt,
-      });
       const cusa = synced({
         platform: 'ps5',
         externalId: 'CUSA18278_00',
         title: 'Cyberpunk 2077',
         totalSeconds: h(52),
-        imageUrl: 'https://cusa.jpg',
+        imageUrl: null,
       });
-      icons.push({ libraryGameId: cusa.id });
       const legacyPs4 = game({
         platform: 'ps4',
         externalId: 'legacy:cyberpunk-2077-ps4',
         title: 'Cyberpunk 2077',
         titleKey: 'cyberpunk 2077',
-        totalSeconds: h(40),
+        totalSeconds: h(52),
         totalChangedAt: legacyAt,
-        imageUrl: null,
+        imageUrl: 'https://legacy.jpg',
       });
+      const legacySession = (id: number, libraryGameId: unknown) => ({
+        id,
+        libraryGameId,
+        source: 'import',
+        legacyRef: `game:${id}`,
+        seconds: h(40),
+        startedAt: legacyAt,
+        endedAt: legacyAt,
+      });
+      sessions.push(
+        legacySession(1, adopted.id),
+        legacySession(2, legacyPs4.id),
+      );
+      icons.push({ libraryGameId: legacyPs4.id });
       const twinCusa = synced({
         platform: 'ps5',
         externalId: 'CUSA34384_00',
@@ -661,31 +672,28 @@ describe('SyncService', () => {
       const run = await service.syncConnection(1, now);
       expect(run.ok).toBe(true);
 
+      // Cyberpunk 52.0 legacy went into CUSA18278 (closest total), not PPSA04029.
       expect(games.map((g) => [g.id, g.platform, g.externalId])).toEqual([
         [adopted.id, 'ps5', 'PPSA04029_00'],
-        [legacyPs4.id, 'ps4', 'CUSA18278_00'],
+        [cusa.id, 'ps4', 'CUSA18278_00'],
         [twinPpsa.id, 'ps5', 'PPSA08329_00'],
         [us.id, 'ps4', 'CUSA07408_00'],
         [eu.id, 'ps4', 'CUSA07410_00'],
       ]);
       expect(
-        games.some((g) => g.id === twinCusa.id || g.id === netflix.id),
+        games.some((g) =>
+          [twinCusa.id, netflix.id, legacyPs4.id].includes(g.id),
+        ),
       ).toBe(false);
       expect(
         games.every((g) => g.titleKey === titleKey(g.title as string)),
       ).toBe(true);
-      // The legacy row took the folded row's icon and art.
-      expect(icons).toEqual([{ libraryGameId: legacyPs4.id }]);
-      expect(legacyPs4.imageUrl).toBe('https://cusa.jpg');
-      // Legacy 40 h was the baseline: the catch-up to 52 h is one session.
-      expect(legacyPs4.totalSeconds).toBe(h(52));
-      expect(sessions.filter((x) => x.legacyRef === null)).toEqual([
-        expect.objectContaining({
-          libraryGameId: legacyPs4.id,
-          source: 'import',
-          seconds: h(12),
-        }),
-      ]);
+      // The synced row keeps its total and takes the legacy history, icon and art.
+      expect(cusa.totalSeconds).toBe(h(52));
+      expect(sessions.find((x) => x.id === 2)?.libraryGameId).toBe(cusa.id);
+      expect(icons).toEqual([{ libraryGameId: cusa.id }]);
+      expect(cusa.imageUrl).toBe('https://legacy.jpg');
+      expect(sessions.filter((x) => x.legacyRef === null)).toEqual([]);
 
       const before = snapshot();
       await service.syncConnection(1, new Date(now.getTime() + 1));
@@ -725,72 +733,68 @@ describe('SyncService', () => {
       );
     });
 
-    it('a new title adopts the legacy row with a matching total and similar title', async () => {
-      const legacy = game({
+    it('a renamed new title: created by one sync, the other legacy row folds in on the next (R2)', async () => {
+      const siegeX = game({
         platform: 'ps5',
-        externalId: 'legacy:r6',
-        title: "Tom Clancy's Rainbow Six Siege X",
+        externalId: 'legacy:r6x',
+        title: 'Tom Clancy’s Rainbow Six Siege X',
         titleKey: 'tom clancys rainbow six siege x',
         totalSeconds: h(675.9),
         totalChangedAt: legacyAt,
       });
+      const siege = game({
+        platform: 'ps5',
+        externalId: 'legacy:r6',
+        title: 'Tom Clancy’s Rainbow Six Siege',
+        titleKey: 'tom clancys rainbow six siege',
+        totalSeconds: h(548.4),
+        totalChangedAt: legacyAt,
+      });
       fetchTitles.mockResolvedValue({
         titles: [
-          psn('ps5', 'PPSA01397_00', 'Tom Clancy‘s Rainbow Six Siege', 676),
+          psn('ps5', 'PPSA01397_00', 'Tom Clancy‘s Rainbow Six® Siege', 675.9),
         ],
       });
       await service.syncConnection(1, now);
+      // Same key as the 548.4 h row: the existing key adoption takes it.
+      expect(games.map((g) => g.id)).toEqual([siegeX.id, siege.id]);
+      expect(siege.externalId).toBe('PPSA01397_00');
+
+      await service.syncConnection(1, new Date(now.getTime() + 1));
+      // The 675.9 h "Siege X" row folds into it (R2); the synced total stays.
       expect(games).toEqual([
         expect.objectContaining({
-          id: legacy.id,
+          id: siege.id,
           externalId: 'PPSA01397_00',
-          title: 'Tom Clancy‘s Rainbow Six Siege',
-          titleKey: 'tom clancys rainbow six siege',
-          totalSeconds: h(676),
-        }),
-      ]);
-      // Only the small delta since the legacy total is booked.
-      expect(sessions).toEqual([
-        expect.objectContaining({
-          libraryGameId: legacy.id,
-          source: 'psn',
-          seconds: h(676) - h(675.9),
+          totalSeconds: h(675.9),
         }),
       ]);
     });
 
-    it('two qualifying legacy rows: no adoption, a new row, a warning', async () => {
-      game({
-        platform: 'ps4',
-        externalId: 'legacy:a',
-        title: 'God of War',
-        titleKey: 'god of war',
-        totalSeconds: h(31),
+    it('Far Cry 6 never folds into Far Cry® 5 (number rule)', async () => {
+      const legacy = game({
+        platform: 'ps5',
+        externalId: 'legacy:fc6',
+        title: 'Far Cry 6',
+        titleKey: 'far cry 6',
+        totalSeconds: h(13.1),
         totalChangedAt: legacyAt,
       });
-      game({
-        platform: 'ps5',
-        externalId: 'legacy:b',
-        title: 'God of War III Remastered',
-        titleKey: 'god of war iii remastered',
-        totalSeconds: h(31.2),
-        totalChangedAt: legacyAt,
+      synced({
+        platform: 'ps4',
+        externalId: 'CUSA05847_00',
+        title: 'Far Cry® 5',
+        totalSeconds: h(14),
       });
       fetchTitles.mockResolvedValue({
-        titles: [psn('ps4', 'CUSA01623_00', 'God of War III', 31.3)],
+        titles: [psn('ps4', 'CUSA05847_00', 'Far Cry® 5', 14)],
       });
       await service.syncConnection(1, now);
-      const ids = () => games.map((g) => g.externalId);
-      expect(ids()).toEqual(['legacy:a', 'legacy:b', 'CUSA01623_00']);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('several legacy rows match its total'),
-      );
-      // The next sync's repair sees the same ambiguity and still adopts nothing.
-      await service.syncConnection(1, new Date(now.getTime() + 1));
-      expect(ids()).toEqual(['legacy:a', 'legacy:b', 'CUSA01623_00']);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('matches several legacy totals'),
-      );
+      expect(games.map((g) => g.externalId)).toEqual([
+        'legacy:fc6',
+        'CUSA05847_00',
+      ]);
+      expect(legacy.totalSeconds).toBe(h(13.1));
     });
   });
 

@@ -66,6 +66,34 @@ describe('SteamClient', () => {
     ]);
   });
 
+  it('asks for played free games and keeps them (Bitburner, appid 1812820, free to play)', async () => {
+    get.mockResolvedValue({
+      data: {
+        response: {
+          games: [
+            { appid: 1812820, name: 'Bitburner', playtime_forever: 34_322 },
+          ],
+        },
+      },
+    });
+    const { titles } = await client.fetchTitles(conn);
+    expect(get).toHaveBeenCalledWith(
+      expect.stringContaining('IPlayerService/GetOwnedGames/v1'),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          include_played_free_games: 1,
+        }) as unknown,
+      }),
+    );
+    expect(titles).toEqual([
+      expect.objectContaining({
+        externalId: '1812820',
+        title: 'Bitburner',
+        totalSeconds: 34_322 * 60,
+      }),
+    ]);
+  });
+
   it('skips malformed titles, logs only a count, keeps the rest (M6)', async () => {
     const warn = jest
       .spyOn(Logger.prototype, 'warn')

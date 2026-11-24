@@ -191,13 +191,15 @@ The dry-run report shows the would-be state (counts and `inserted` as if committ
 Every Steam/PSN sync first repairs the user's library inside its transaction
 (`sync/repair-plan.ts`): titleKeys recomputed, PSN platforms taken from the
 title id (CUSA ps4, PPSA ps5), exact cross-gen duplicates and media apps
-deleted (kept and logged when they have sessions), synced rows folded into the
-matching unadopted legacy row (same titleKey, or one legacy row with an almost
-equal total and a similar title), first-sync sessions older than the last
-Exophase scrape deleted (< 5 min) or re-windowed. To see what it would do,
-without writing or calling PSN/Steam:
+deleted (kept and logged when they have sessions), every unadopted legacy row
+of a connected platform folded into the synced row it matches (rules R1-R4 in
+`library/legacy-match.ts`; the synced total stays, the legacy sessions and icon
+move), first-sync sessions older than the last Exophase scrape deleted
+(< 5 min) or re-windowed. To see what it would do, without writing or calling
+PSN/Steam:
 
 `docker exec <backend> node dist/modules/games/library/run-audit.js --user-id <id>`
 
-It prints old (`total_game_time`) vs current vs after-repair hours per title
-group, the unadopted legacy rows, and the planned actions.
+It prints total hours (old `total_game_time`, now, after repair), each legacy
+fold with its rule, the unmatched legacy rows, media apps and cross-gen pairs to
+drop, relabels, noise sessions, and the title groups whose totals differ.

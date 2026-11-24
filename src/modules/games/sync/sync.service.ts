@@ -36,12 +36,11 @@ import {
 } from './platform-client';
 import {
   MIN_SESSION_SECONDS,
-  NO_SESSIONS,
   RepairAction,
   lastLegacyScrape,
   planRepairs,
   planSessionRepairs,
-  sessionStats,
+  sessionCounts,
 } from './repair-plan';
 
 const RUN_RETENTION_MS = 90 * 24 * 3600 * 1000;
@@ -210,7 +209,6 @@ export class SyncService {
             id: true,
             libraryGameId: true,
             source: true,
-            legacyRef: true,
             startedAt: true,
             endedAt: true,
             seconds: true,
@@ -232,19 +230,19 @@ export class SyncService {
       await sessionRepo.delete([...gone]);
       sessions = sessions.filter((s) => !gone.has(s.id));
     }
-    const stats = sessionStats(sessions);
+    const counts = sessionCounts(sessions);
     const plan = planRepairs(
       conn.provider,
-      rows.map((g) => ({ ...g, ...(stats.get(g.id) ?? NO_SESSIONS) })),
+      rows.map((g) => ({ ...g, sessions: counts.get(g.id) ?? 0 })),
       titles,
       ignoredIds,
     );
     for (const a of plan.actions) await this.applyRepair(m, conn, a);
     const all = [...sessionFixes, ...plan.actions];
     if (rekeyed || all.length) {
-      const counts: Record<string, number> = rekeyed ? { rekey: rekeyed } : {};
-      for (const a of all) counts[a.kind] = (counts[a.kind] ?? 0) + 1;
-      this.logger.log(`sync ${conn.id} repairs: ${JSON.stringify(counts)}`);
+      const done: Record<string, number> = rekeyed ? { rekey: rekeyed } : {};
+      for (const a of all) done[a.kind] = (done[a.kind] ?? 0) + 1;
+      this.logger.log(`sync ${conn.id} repairs: ${JSON.stringify(done)}`);
     }
     return { titles: plan.titles, scrapeAt };
   }
@@ -268,24 +266,15 @@ export class SyncService {
           `sync ${conn.id}: library game ${a.id} is a PSN ${a.why} but has sessions; kept`,
         );
         return;
-      case 'ambiguous':
-        this.logger.warn(
-          `sync ${conn.id}: library game ${a.id} matches several legacy totals (${a.legacyIds.join(', ')}); not adopted`,
-        );
-        return;
       case 'fold':
-      case 'adopt': {
-        const dup = await games.findOneBy({ id: a.dupId });
-        const into = await games.findOneBy({
-          id: a.kind === 'fold' ? a.intoId : a.legacyId,
+      case 'foldLegacy': {
+        const dup = await games.findOneBy({
+          id: a.kind === 'fold' ? a.dupId : a.legacyId,
         });
+        const into = await games.findOneBy({ id: a.intoId });
         if (!dup || !into) return;
+        // The synced total stays authoritative; fold only moves sessions, icon and art.
         await this.library.fold(dup, into, m);
-        if (a.kind === 'adopt') {
-          into.platform = a.platform;
-          into.externalId = a.externalId;
-          if (into.totalSeconds !== null) into.totalSeconds += a.baselinePlus;
-        }
         await games.save(into);
       }
     }

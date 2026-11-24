@@ -9,24 +9,24 @@ import {
   lastLegacyScrape,
   planRepairs,
   planSessionRepairs,
-  sessionStats,
+  sessionCounts,
 } from './repair-plan';
 
-const H = 3600;
-const h = (hours: number) => Math.round(hours * H);
+const h = (hours: number) => Math.round(hours * 3600);
 
 let nextId = 1;
-const row = (o: Partial<RepairRow> & { title: string }): RepairRow => ({
-  id: nextId++,
-  platform: 'ps5',
-  externalId: `legacy:${nextId}`,
-  titleKey: titleKey(o.title),
-  totalSeconds: null,
-  syncSeconds: 0,
-  trackerSessions: 0,
-  legacySessions: 0,
-  ...o,
-});
+const row = (o: Partial<RepairRow> & { title: string }): RepairRow => {
+  const id = nextId++;
+  return {
+    id,
+    platform: 'ps5',
+    externalId: `legacy:${id}`,
+    titleKey: titleKey(o.title),
+    totalSeconds: null,
+    sessions: 0,
+    ...o,
+  };
+};
 const obs = (
   platform: Platform,
   externalId: string,
@@ -41,41 +41,26 @@ function apply(rows: RepairRow[], actions: RepairAction[]): RepairRow[] {
   for (const a of actions) {
     if (a.kind === 'relabel') byId(a.id).platform = a.platform;
     if (a.kind === 'delete') out = out.filter((r) => r.id !== a.id);
-    if (a.kind === 'fold' || a.kind === 'adopt') {
-      const dup = byId(a.dupId);
-      const into = byId(a.kind === 'fold' ? a.intoId : a.legacyId);
-      into.syncSeconds += dup.syncSeconds;
-      into.trackerSessions += dup.trackerSessions;
-      into.legacySessions += dup.legacySessions;
-      if (a.kind === 'adopt') {
-        into.platform = a.platform;
-        into.externalId = a.externalId;
-        if (into.totalSeconds !== null) into.totalSeconds += a.baselinePlus;
-      }
+    if (a.kind === 'fold' || a.kind === 'foldLegacy') {
+      const dup = byId(a.kind === 'fold' ? a.dupId : a.legacyId);
+      byId(a.intoId).sessions += dup.sessions;
       out = out.filter((r) => r.id !== dup.id);
     }
   }
   return out;
 }
 
-describe('sessionStats', () => {
-  it('splits sync seconds, tracker and legacy sessions', () => {
-    const s = sessionStats([
-      { libraryGameId: 1, source: 'psn', legacyRef: null, seconds: 600 },
-      { libraryGameId: 1, source: 'import', legacyRef: null, seconds: 60 },
-      { libraryGameId: 1, source: 'import', legacyRef: 'game:1', seconds: 9 },
-      { libraryGameId: 2, source: 'tracker', legacyRef: null, seconds: 5 },
+describe('sessionCounts', () => {
+  it('counts sessions per game', () => {
+    const c = sessionCounts([
+      { libraryGameId: 1 },
+      { libraryGameId: 1 },
+      { libraryGameId: 2 },
     ]);
-    expect(s.get(1)).toEqual({
-      syncSeconds: 660,
-      trackerSessions: 0,
-      legacySessions: 1,
-    });
-    expect(s.get(2)).toEqual({
-      syncSeconds: 0,
-      trackerSessions: 1,
-      legacySessions: 0,
-    });
+    expect([...c]).toEqual([
+      [1, 2],
+      [2, 1],
+    ]);
   });
 });
 
@@ -84,30 +69,22 @@ describe('dropExactDuplicates', () => {
     obs('ps4', 'CUSA34384_00', 'God of War Ragnarök', 51.5),
     obs('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5),
   ];
-  const ids = (ts: ObservedTitle[]) => ts.map((t) => t.externalId);
+  const kept = (existing: [string, boolean][] = []) =>
+    dropExactDuplicates(pair, new Map(existing)).kept.map((t) => t.externalId);
 
-  it('keeps the ps5 entry when neither has a row', () => {
+  it('keeps the ps5 entry when neither has a row, and names the twin of the dropped one', () => {
     const r = dropExactDuplicates(pair, new Map());
-    expect(ids(r.kept)).toEqual(['PPSA08329_00']);
-    expect(ids(r.dropped)).toEqual(['CUSA34384_00']);
+    expect(r.kept.map((t) => t.externalId)).toEqual(['PPSA08329_00']);
+    expect(r.dropped).toEqual([{ title: pair[0], twin: pair[1] }]);
   });
 
   it('prefers an existing row, and one with sessions over one without', () => {
+    expect(kept([['ps4|CUSA34384_00', false]])).toEqual(['CUSA34384_00']);
     expect(
-      ids(
-        dropExactDuplicates(pair, new Map([['ps4|CUSA34384_00', false]])).kept,
-      ),
-    ).toEqual(['CUSA34384_00']);
-    expect(
-      ids(
-        dropExactDuplicates(
-          pair,
-          new Map([
-            ['ps4|CUSA34384_00', true],
-            ['ps5|PPSA08329_00', false],
-          ]),
-        ).kept,
-      ),
+      kept([
+        ['ps4|CUSA34384_00', true],
+        ['ps5|PPSA08329_00', false],
+      ]),
     ).toEqual(['CUSA34384_00']);
   });
 
@@ -131,7 +108,6 @@ describe('planRepairs', () => {
     it('relabels a CUSA row stored as ps5 and a PPSA row stored as ps4', () => {
       const a = row({
         title: 'A',
-        platform: 'ps5',
         externalId: 'CUSA00001_00',
         totalSeconds: 1,
       });
@@ -149,25 +125,15 @@ describe('planRepairs', () => {
 
     it('leaves legacy, Steam and non-PSN-pattern rows alone', () => {
       const rows = [
-        row({ title: 'A', platform: 'ps5', externalId: 'legacy:cusa' }),
+        row({ title: 'A', externalId: 'legacy:cusa' }),
         row({
           title: 'B',
           platform: 'steam',
           externalId: '1091500',
           totalSeconds: 1,
         }),
-        row({
-          title: 'C',
-          platform: 'ps5',
-          externalId: 'CUSA1',
-          totalSeconds: 1,
-        }),
-        row({
-          title: 'D',
-          platform: 'ps5',
-          externalId: 'NPWR12345_00',
-          totalSeconds: 1,
-        }),
+        row({ title: 'C', externalId: 'CUSA1', totalSeconds: 1 }),
+        row({ title: 'D', externalId: 'NPWR12345_00', totalSeconds: 1 }),
       ];
       expect(planRepairs('psn', rows, []).actions).toEqual([]);
       expect(planRepairs('steam', rows, []).actions).toEqual([]);
@@ -176,10 +142,9 @@ describe('planRepairs', () => {
     it('merges a mislabelled row into its correctly labelled twin', () => {
       const bad = row({
         title: 'A',
-        platform: 'ps5',
         externalId: 'CUSA00001_00',
         totalSeconds: 1,
-        syncSeconds: 60,
+        sessions: 1,
       });
       const good = row({
         title: 'A',
@@ -194,37 +159,42 @@ describe('planRepairs', () => {
   });
 
   describe('exact duplicates and media apps', () => {
-    it('deletes the dropped duplicate row, or keeps it when it has sessions', () => {
-      const cusa = row({
+    const ragnarok = () => [
+      row({
         title: 'God of War Ragnarök',
-        platform: 'ps5',
         externalId: 'CUSA34384_00',
         totalSeconds: h(51.5),
-      });
-      const ppsa = row({
+      }),
+      row({
         title: 'God of War Ragnarök',
-        platform: 'ps5',
         externalId: 'PPSA08329_00',
         totalSeconds: h(51.5),
-      });
-      const titles = [
-        obs('ps4', 'CUSA34384_00', 'God of War Ragnarök', 51.5),
-        obs('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5),
-      ];
-      const plan = planRepairs('psn', [cusa, ppsa], titles);
+      }),
+    ];
+    const titles = [
+      obs('ps4', 'CUSA34384_00', 'God of War Ragnarök', 51.5),
+      obs('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5),
+    ];
+
+    it('deletes the dropped duplicate row', () => {
+      const rows = ragnarok();
+      const plan = planRepairs('psn', rows, titles);
+      const [cusa] = rows;
       expect(plan.titles.map((t) => t.externalId)).toEqual(['PPSA08329_00']);
       expect(plan.actions).toEqual([
         { kind: 'relabel', id: cusa.id, platform: 'ps4' },
-        { kind: 'delete', id: cusa.id, why: 'duplicate' },
+        { kind: 'delete', id: cusa.id, why: 'duplicate', twin: 'PPSA08329_00' },
       ]);
+    });
 
-      // Both rows hold sessions: the ps5 one is kept, the other is logged, not deleted.
-      cusa.syncSeconds = 60;
-      ppsa.syncSeconds = 60;
+    it('keeps it (to be logged) when both rows hold sessions', () => {
+      const [cusa, ppsa] = ragnarok();
+      cusa.sessions = ppsa.sessions = 1;
       expect(planRepairs('psn', [cusa, ppsa], titles).actions).toContainEqual({
         kind: 'keep',
         id: cusa.id,
         why: 'duplicate',
+        twin: 'PPSA08329_00',
       });
     });
 
@@ -237,16 +207,14 @@ describe('planRepairs', () => {
       });
       const other = row({
         title: 'Some Media',
-        platform: 'ps5',
         externalId: 'PPSA00003_00',
         totalSeconds: h(3),
       });
       const yt = row({
         title: 'YouTube',
-        platform: 'ps5',
         externalId: 'PPSA00004_00',
         totalSeconds: h(5),
-        legacySessions: 2,
+        sessions: 2,
       });
       const legacyNetflix = row({
         title: 'Netflix',
@@ -267,322 +235,199 @@ describe('planRepairs', () => {
     });
   });
 
-  describe('legacy adoption by title', () => {
-    it('folds a synced row into the unadopted legacy row, raising its baseline by sync seconds', () => {
-      const legacy = row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps4',
-        totalSeconds: h(40),
-      });
-      const dup = row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps4',
-        externalId: 'CUSA18278_00',
-        totalSeconds: h(52),
-        syncSeconds: 1800,
-      });
-      expect(planRepairs('psn', [legacy, dup], []).actions).toEqual([
-        {
-          kind: 'adopt',
-          dupId: dup.id,
-          legacyId: legacy.id,
-          platform: 'ps4',
-          externalId: 'CUSA18278_00',
-          baselinePlus: 1800,
-          by: 'title',
-        },
-      ]);
-    });
-
-    it('two regions: the larger total adopts, the other stays', () => {
-      const legacy = row({
-        title: 'God of War',
-        platform: 'ps4',
-        totalSeconds: h(30),
-      });
-      const eu = row({
-        title: 'God of War',
-        platform: 'ps4',
-        externalId: 'CUSA07410_00',
-        totalSeconds: h(28.1),
-      });
-      const us = row({
-        title: 'God of War',
-        platform: 'ps4',
-        externalId: 'CUSA07408_00',
-        totalSeconds: h(31.3),
-      });
-      const plan = planRepairs('psn', [legacy, eu, us], []);
-      expect(plan.actions).toEqual([
-        expect.objectContaining({
-          kind: 'adopt',
-          dupId: us.id,
-          legacyId: legacy.id,
-        }),
-      ]);
-    });
-
-    it('never folds a row holding legacy sessions (an adopted legacy row) into another', () => {
-      const legacy = row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps5',
-        totalSeconds: h(10),
-      });
-      const adopted = row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps5',
-        externalId: 'PPSA04029_00',
-        totalSeconds: h(113.8),
-        legacySessions: 40,
-      });
-      expect(planRepairs('psn', [legacy, adopted], []).actions).toEqual([]);
-    });
-
-    it('Steam: a synced row with tracker sessions still adopts by title', () => {
-      const legacy = row({
-        title: "Tom Clancy's Rainbow Six Siege",
-        platform: 'steam',
-        totalSeconds: h(500),
-      });
-      const dup = row({
+  describe('legacy rows fold into synced rows', () => {
+    it('several legacy rows may fold into one synced row; null totals and other families stay', () => {
+      const s = row({
         title: 'Tom Clancy‘s Rainbow Six® Siege',
-        platform: 'steam',
-        externalId: '359550',
-        totalSeconds: h(587.5),
-        trackerSessions: 3,
-      });
-      expect(planRepairs('steam', [legacy, dup], []).actions).toEqual([
-        expect.objectContaining({
-          kind: 'adopt',
-          dupId: dup.id,
-          legacyId: legacy.id,
-          by: 'title',
-          baselinePlus: 0,
-        }),
-      ]);
-      // A PSN sync does not touch Steam rows.
-      expect(planRepairs('psn', [legacy, dup], []).actions).toEqual([]);
-    });
-  });
-
-  describe('legacy adoption by total', () => {
-    it('R6 Siege: legacy ps5 "…Siege X" 675.9 h takes PPSA01397 "…Siege" 676.0 h', () => {
-      const legacy = row({
-        title: "Tom Clancy's Rainbow Six Siege X",
-        platform: 'ps5',
-        totalSeconds: h(675.9),
-      });
-      const dup = row({
-        title: 'Tom Clancy‘s Rainbow Six Siege',
-        platform: 'ps5',
         externalId: 'PPSA01397_00',
         totalSeconds: h(675.9),
       });
-      const plan = planRepairs(
-        'psn',
-        [legacy, dup],
-        [obs('ps5', 'PPSA01397_00', 'Tom Clancy‘s Rainbow Six Siege', 676)],
-      );
-      expect(plan.actions).toEqual([
-        expect.objectContaining({
-          kind: 'adopt',
-          dupId: dup.id,
-          legacyId: legacy.id,
-          by: 'total',
-          platform: 'ps5',
-        }),
-      ]);
-    });
-
-    it('crosses ps4/ps5 (Exophase PS labels are unreliable): legacy ps5 318.9 h, CUSA01788 318.9 h', () => {
-      const legacy = row({
-        title: 'Grand Theft Auto V',
-        platform: 'ps5',
-        totalSeconds: h(318.9),
+      const x = row({
+        title: 'Tom Clancy’s Rainbow Six Siege X',
+        totalSeconds: h(675.9),
       });
-      const dup = row({
-        title: 'Grand Theft Auto V (PS4)',
-        platform: 'ps4',
-        externalId: 'CUSA01788_00',
-        totalSeconds: h(318.9),
+      const plain = row({
+        title: 'Tom Clancy’s Rainbow Six Siege',
+        totalSeconds: h(548.4),
       });
-      expect(planRepairs('psn', [legacy, dup], []).actions).toEqual([
-        expect.objectContaining({
-          kind: 'adopt',
-          legacyId: legacy.id,
-          platform: 'ps4',
-          externalId: 'CUSA01788_00',
-          by: 'total',
-        }),
-      ]);
-    });
-
-    it('Steam 359550 587.5 h adopts the matching legacy steam row', () => {
-      const legacy = row({
-        title: 'Rainbow Six Siege',
+      const noTotal = row({ title: 'Tom Clancy’s Rainbow Six Siege' });
+      const steam = row({
+        title: 'Tom Clancy’s Rainbow Six Siege',
         platform: 'steam',
-        totalSeconds: h(587),
+        totalSeconds: h(675.9),
       });
-      const dup = row({
-        title: "Tom Clancy's Rainbow Six® Siege X",
-        platform: 'steam',
-        externalId: '359550',
-        totalSeconds: h(587.5),
-      });
-      expect(planRepairs('steam', [legacy, dup], []).actions).toEqual([
-        expect.objectContaining({
-          kind: 'adopt',
-          dupId: dup.id,
-          legacyId: legacy.id,
-          by: 'total',
-        }),
+      expect(
+        planRepairs('psn', [s, x, plain, noTotal, steam], []).actions,
+      ).toEqual([
+        { kind: 'foldLegacy', legacyId: x.id, intoId: s.id, rule: 'R2' },
+        { kind: 'foldLegacy', legacyId: plain.id, intoId: s.id, rule: 'R1' },
       ]);
     });
 
-    it('two qualifying legacy rows: adopts none and reports it', () => {
-      const a = row({
-        title: 'God of War',
-        platform: 'ps4',
-        totalSeconds: h(31),
-      });
-      const b = row({
-        title: 'God of War III Remastered',
-        platform: 'ps5',
-        totalSeconds: h(31.2),
-      });
-      const dup = row({
-        title: 'God of War III',
-        platform: 'ps4',
-        externalId: 'CUSA01623_00',
-        totalSeconds: h(31.3),
-      });
-      expect(planRepairs('psn', [a, b, dup], []).actions).toEqual([
-        { kind: 'ambiguous', id: dup.id, legacyIds: [a.id, b.id] },
-      ]);
-    });
-
-    it('needs only sync sessions, a total within tolerance and a similar title', () => {
-      const legacy = row({
-        title: 'Bloodborne',
-        platform: 'ps4',
-        totalSeconds: h(100),
-      });
-      const tracked = row({
-        title: 'Bloodborne GOTY',
-        platform: 'steam',
-        externalId: '1',
-        totalSeconds: h(100),
-        trackerSessions: 1,
-      });
-      const far = row({
-        title: 'Bloodborne GOTY',
-        platform: 'ps4',
-        externalId: 'CUSA00900_00',
-        totalSeconds: h(103),
-      });
-      const unlike = row({
+    it('compares against the total reported in this fetch', () => {
+      const s = row({
         title: 'Astro Bot',
+        externalId: 'PPSA00005_00',
+        totalSeconds: h(1),
+      });
+      const l = row({ title: 'Astro Bot', totalSeconds: h(20) });
+      expect(planRepairs('psn', [s, l], []).actions).toEqual([]);
+      expect(
+        planRepairs(
+          'psn',
+          [s, l],
+          [obs('ps5', 'PPSA00005_00', 'Astro Bot', 20.5)],
+        ).actions,
+      ).toEqual([
+        { kind: 'foldLegacy', legacyId: l.id, intoId: s.id, rule: 'R1' },
+      ]);
+    });
+
+    it('a dropped duplicate or app row is no target', () => {
+      const app = row({
+        title: 'Netflix',
         platform: 'ps4',
-        externalId: 'CUSA00901_00',
-        totalSeconds: h(100),
+        externalId: 'CUSA00127_00',
+        totalSeconds: h(208),
+        sessions: 3,
       });
-      expect(planRepairs('psn', [legacy, far, unlike], []).actions).toEqual([]);
-      const steamLegacy = row({
-        title: 'Bloodborne',
+      const l = row({
+        title: 'Netflix',
+        platform: 'ps4',
+        totalSeconds: h(200),
+      });
+      expect(planRepairs('psn', [app, l], []).actions).toEqual([
+        { kind: 'keep', id: app.id, why: 'app' },
+      ]);
+    });
+
+    it('Steam rows fold the same way; a Steam sync leaves PS rows alone', () => {
+      const s = row({
+        title: 'Bitburner',
         platform: 'steam',
-        totalSeconds: h(100),
+        externalId: '1812820',
+        totalSeconds: h(572.1),
       });
-      expect(planRepairs('steam', [steamLegacy, tracked], []).actions).toEqual(
-        [],
-      );
+      const l = row({
+        title: 'Bitburner',
+        platform: 'steam',
+        totalSeconds: h(572),
+      });
+      const ps = row({ title: 'Astro Bot', totalSeconds: h(1) });
+      const psS = row({
+        title: 'Astro Bot',
+        externalId: 'PPSA00005_00',
+        totalSeconds: h(1),
+      });
+      expect(planRepairs('steam', [s, l, ps, psS], []).actions).toEqual([
+        { kind: 'foldLegacy', legacyId: l.id, intoId: s.id, rule: 'R1' },
+      ]);
     });
   });
 
   it('production state (user 2): repairs once, then plans nothing', () => {
+    const ps = (
+      platform: 'ps4' | 'ps5',
+      externalId: string,
+      title: string,
+      hours: number,
+      sessions = 0,
+    ) => row({ platform, externalId, title, totalSeconds: h(hours), sessions });
+    const legacy = (platform: Platform, title: string, hours: number) =>
+      row({ platform, title, totalSeconds: h(hours), sessions: 3 });
     const rows = [
-      // Cyberpunk: adopted ps5 legacy row with history; CUSA stored as ps5 next to an unadopted ps4 legacy row.
-      row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps5',
-        externalId: 'PPSA04029_00',
-        totalSeconds: h(113.8),
-        legacySessions: 30,
-      }),
-      row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps5',
-        externalId: 'CUSA18278_00',
-        totalSeconds: h(52),
-      }),
-      row({
-        title: 'Cyberpunk 2077',
-        platform: 'ps4',
-        externalId: 'legacy:cyberpunk-2077-ps4',
-        totalSeconds: h(40),
-        legacySessions: 5,
-      }),
-      // Ragnarök: one cross-gen entitlement reported twice.
-      row({
-        title: 'God of War Ragnarök',
-        platform: 'ps5',
-        externalId: 'CUSA34384_00',
-        totalSeconds: h(51.5),
-      }),
-      row({
-        title: 'God of War Ragnarök',
-        platform: 'ps5',
-        externalId: 'PPSA08329_00',
-        totalSeconds: h(51.5),
-      }),
-      // God of War: two regions, both real.
-      row({
-        title: 'God of War',
-        platform: 'ps4',
-        externalId: 'CUSA07408_00',
-        totalSeconds: h(31.3),
-      }),
-      row({
-        title: 'God of War',
-        platform: 'ps4',
-        externalId: 'CUSA07410_00',
-        totalSeconds: h(28.1),
-      }),
+      // Synced rows after the first sync (CUSA ones partly stored as ps5).
+      ps('ps5', 'PPSA01397_00', 'Tom Clancy‘s Rainbow Six® Siege', 675.9), // 1
+      ps('ps5', 'CUSA01788_00', 'Tom Clancy‘s Rainbow Six® Siege', 318.9), // 2
+      ps('ps5', 'PPSA04029_00', 'Cyberpunk 2077', 113.8, 30), // 3, an adopted legacy row
+      ps('ps5', 'CUSA18278_00', 'Cyberpunk 2077', 52.0), // 4
+      ps('ps4', 'CUSA18534_00', 'Assassin’s Creed® Valhalla', 16.5), // 5
+      ps('ps4', 'CUSA15138_00', 'Rogue Company', 20.4), // 6
+      ps('ps4', 'CUSA08025_00', 'Borderlands® 3', 0.7), // 7
+      ps('ps5', 'PPSA04019_00', 'The Witcher 3: Wild Hunt — Remastered', 90.8), // 8
+      ps('ps4', 'CUSA05847_00', 'Far Cry® 5', 14.0), // 9
+      ps('ps5', 'CUSA34384_00', 'God of War Ragnarök', 51.5), // 10
+      ps('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5), // 11
+      ps('ps4', 'CUSA07408_00', 'God of War', 31.3), // 12
+      ps('ps4', 'CUSA07410_00', 'God of War', 28.1), // 13
+      ps(
+        'ps4',
+        'CUSA00341_00',
+        'UNCHARTED: Legacy of Thieves Collection',
+        12.8,
+      ), // 14
+      ps('ps4', 'CUSA05078_00', 'Paladins', 4.0), // 15
+      ps('ps4', 'CUSA04414_00', 'Paladins', 0.9), // 16
+      ps('ps4', 'CUSA00127_00', 'Netflix', 208), // 17
+      // Unadopted legacy rows.
+      legacy('ps5', 'Tom Clancy’s Rainbow Six Siege X', 675.9), // 18
+      legacy('ps5', 'Tom Clancy’s Rainbow Six Siege', 548.4), // 19
+      legacy('ps4', 'Tom Clancy’s Rainbow Six Siege X', 318.9), // 20
+      legacy('ps4', 'Tom Clancy’s Rainbow Six Siege', 318.9), // 21
+      legacy('ps4', 'Cyberpunk 2077', 52.0), // 22
+      legacy('ps4', "Assassin's Creed Valhalla", 16.5), // 23
+      legacy('ps4', 'Rogue Company', 20.4), // 24
+      legacy('ps4', 'Borderlands 3', 0.8), // 25
+      legacy('ps5', 'The Witcher 3: Wild Hunt', 90.8), // 26
+      legacy('ps5', 'Far Cry 6', 13.1), // 27
+      legacy('ps4', 'Uncharted 4: A Thief’s End', 12.8), // 28
+      legacy('ps4', 'Paladins', 4.9), // 29
+      legacy('steam', 'Bitburner', 572.0), // 30
     ];
-    const titles = [
-      obs('ps5', 'PPSA04029_00', 'Cyberpunk 2077', 113.8),
-      obs('ps4', 'CUSA18278_00', 'Cyberpunk 2077', 52),
-      obs('ps4', 'CUSA34384_00', 'God of War Ragnarök', 51.5),
-      obs('ps5', 'PPSA08329_00', 'God of War Ragnarök', 51.5),
-      obs('ps4', 'CUSA07408_00', 'God of War', 31.3),
-      obs('ps4', 'CUSA07410_00', 'God of War', 28.1),
-    ];
-    const first = planRepairs('psn', rows, titles);
-    expect(first.actions).toEqual([
-      { kind: 'relabel', id: 2, platform: 'ps4' },
-      { kind: 'relabel', id: 4, platform: 'ps4' },
-      { kind: 'delete', id: 4, why: 'duplicate' },
-      {
-        kind: 'adopt',
-        dupId: 2,
-        legacyId: 3,
-        platform: 'ps4',
-        externalId: 'CUSA18278_00',
-        baselinePlus: 0,
-        by: 'title',
-      },
+    const titles = rows
+      .filter(
+        (r) => !r.externalId.startsWith('legacy:') && r.title !== 'Netflix',
+      )
+      .map((r) =>
+        obs(
+          r.externalId.startsWith('CUSA') ? 'ps4' : 'ps5',
+          r.externalId,
+          r.title,
+          r.totalSeconds! / 3600,
+        ),
+      );
+
+    const first = planRepairs('psn', rows, titles, ['CUSA00127_00']);
+    const folds = first.actions.flatMap((a) =>
+      a.kind === 'foldLegacy' ? [[a.legacyId, a.intoId, a.rule]] : [],
+    );
+    // Largest legacy total first.
+    expect(folds).toEqual([
+      [18, 1, 'R2'], // ps5 Siege X 675.9 -> PPSA01397
+      [19, 1, 'R1'], // ps5 Siege 548.4 -> PPSA01397
+      [20, 2, 'R2'], // ps4 Siege X 318.9 -> CUSA01788
+      [21, 2, 'R1'], // ps4 Siege 318.9 -> CUSA01788
+      [26, 8, 'R2'], // Witcher 3 90.8 -> Remastered
+      [22, 4, 'R1'], // Cyberpunk 52.0 -> CUSA18278, not PPSA04029
+      [24, 6, 'R1'], // Rogue Company
+      [23, 5, 'R1'], // AC Valhalla
+      [28, 14, 'R3'], // Uncharted 4 -> Legacy of Thieves, equal total
+      [29, 15, 'R4'], // Paladins 4.9 = 4.0 + 0.9
+      [25, 7, 'R1'], // Borderlands 3 0.8 -> 0.7
     ]);
+    // Far Cry 6 and the Steam row (other family) stay; Ragnarök twin and Netflix go.
+    expect(first.actions).toContainEqual({
+      kind: 'delete',
+      id: 10,
+      why: 'duplicate',
+      twin: 'PPSA08329_00',
+    });
+    expect(first.actions).toContainEqual({
+      kind: 'delete',
+      id: 17,
+      why: 'app',
+    });
     expect(first.titles.map((t) => t.externalId)).not.toContain('CUSA34384_00');
 
     const repaired = apply(rows, first.actions);
-    expect(repaired.map((r) => [r.id, r.platform, r.externalId])).toEqual([
-      [1, 'ps5', 'PPSA04029_00'],
-      [3, 'ps4', 'CUSA18278_00'],
-      [5, 'ps5', 'PPSA08329_00'],
-      [6, 'ps4', 'CUSA07408_00'],
-      [7, 'ps4', 'CUSA07410_00'],
-    ]);
-    expect(repaired.find((r) => r.id === 3)!.totalSeconds).toBe(h(40));
-    const second = planRepairs('psn', repaired, titles);
+    expect(
+      repaired
+        .filter((r) => r.externalId.startsWith('legacy:'))
+        .map((r) => r.id),
+    ).toEqual([27, 30]);
+    // Both God of War regions are kept.
+    expect(repaired.map((r) => r.id)).toEqual(expect.arrayContaining([12, 13]));
+    const second = planRepairs('psn', repaired, titles, ['CUSA00127_00']);
     expect(second.actions).toEqual([]);
     expect(second.titles).toEqual(first.titles);
   });
@@ -598,7 +443,14 @@ describe('first-sync session noise', () => {
     seconds: number,
     startedAt = april,
     endedAt = end,
-  ): RepairSession => ({ id, source, seconds, startedAt, endedAt });
+  ): RepairSession => ({
+    id,
+    libraryGameId: 1,
+    source,
+    seconds,
+    startedAt,
+    endedAt,
+  });
 
   it('lastLegacyScrape is the end of the newest exophase session', () => {
     expect(lastLegacyScrape([])).toBeNull();

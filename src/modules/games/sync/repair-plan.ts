@@ -1,10 +1,10 @@
 import { Platform, Provider, SessionSource } from '../games.types';
-import { matchLegacyByTotal } from '../library/legacy-match';
+import { MatchRule, matchLegacy } from '../library/legacy-match';
 import { titleKey } from '../utils/title-key';
 import type { ObservedTitle } from './platform-client';
 import { isKnownPsnApp, psnTitlePlatform } from './psn.client';
 
-/** A library_game row plus what its sessions say about it. */
+/** A library_game row and how many sessions it has. */
 export interface RepairRow {
   id: number;
   platform: Platform;
@@ -12,17 +12,8 @@ export interface RepairRow {
   title: string;
   titleKey: string;
   totalSeconds: number | null;
-  /** Seconds of sessions earlier syncs wrote (catch-up and deltas). */
-  syncSeconds: number;
-  trackerSessions: number;
-  /** Legacy-import sessions (`legacyRef` set): the row is, or absorbed, a legacy row. */
-  legacySessions: number;
+  sessions: number;
 }
-
-type SessionStats = Pick<
-  RepairRow,
-  'syncSeconds' | 'trackerSessions' | 'legacySessions'
->;
 
 export type RepairAction =
   /** PSN row whose platform disagrees with its title id. */
@@ -30,25 +21,14 @@ export type RepairAction =
   /** Mislabelled row whose correct twin already exists: merge into the twin. */
   | { kind: 'fold'; dupId: number; intoId: number }
   /**
-   * Synced row folded into an unadopted legacy row, which takes its platform and id. The legacy
-   * total stays the baseline, raised by `baselinePlus` (sync sessions moved over) so the next
-   * delta does not count them again.
+   * Unadopted legacy row folded into a synced row (`matchLegacy`): its sessions and icon move, it
+   * is deleted, the synced total stays. Several legacy rows may fold into one synced row.
    */
-  | {
-      kind: 'adopt';
-      dupId: number;
-      legacyId: number;
-      platform: Platform;
-      externalId: string;
-      baselinePlus: number;
-      by: 'title' | 'total';
-    }
-  /** Exact cross-gen duplicate or media app without sessions. */
-  | { kind: 'delete'; id: number; why: 'duplicate' | 'app' }
+  | { kind: 'foldLegacy'; legacyId: number; intoId: number; rule: MatchRule }
+  /** Exact cross-gen duplicate (`twin` is the kept id) or media app, without sessions. */
+  | { kind: 'delete'; id: number; why: 'duplicate' | 'app'; twin?: string }
   /** Same, but it has sessions: left alone, logged. */
-  | { kind: 'keep'; id: number; why: 'duplicate' | 'app' }
-  /** Several legacy rows match the total: none adopted, logged. */
-  | { kind: 'ambiguous'; id: number; legacyIds: number[] };
+  | { kind: 'keep'; id: number; why: 'duplicate' | 'app'; twin?: string };
 
 const PSN_ID = /^[A-Z]{4}\d{5}_\d{2}$/;
 const STEAM_ID = /^\d+$/;
@@ -56,25 +36,13 @@ const isLegacy = (r: { externalId: string }) =>
   r.externalId.startsWith('legacy:');
 const ident = (platform: Platform, externalId: string) =>
   `${platform}|${externalId}`;
-const hasSessions = (r: RepairRow) =>
-  r.syncSeconds > 0 || r.trackerSessions > 0 || r.legacySessions > 0;
-const addStats = (into: SessionStats, from: SessionStats) => {
-  into.syncSeconds += from.syncSeconds;
-  into.trackerSessions += from.trackerSessions;
-  into.legacySessions += from.legacySessions;
-};
-
-export const NO_SESSIONS: SessionStats = {
-  syncSeconds: 0,
-  trackerSessions: 0,
-  legacySessions: 0,
-};
 
 /** Sync sessions under this are noise (Exophase stored whole minutes, PSN reports seconds). */
 export const MIN_SESSION_SECONDS = 300;
 
 export interface RepairSession {
   id: number;
+  libraryGameId: number;
   source: SessionSource;
   startedAt: Date;
   endedAt: Date;
@@ -127,23 +95,13 @@ export function planSessionRepairs(
   return out;
 }
 
-/** Per game id: what its sessions are. */
-export function sessionStats(
-  sessions: {
-    libraryGameId: number;
-    source: SessionSource;
-    legacyRef: string | null;
-    seconds: number;
-  }[],
-): Map<number, SessionStats> {
-  const out = new Map<number, SessionStats>();
-  for (const s of sessions) {
-    const st = out.get(s.libraryGameId) ?? { ...NO_SESSIONS };
-    if (s.legacyRef) st.legacySessions++;
-    else if (s.source === 'tracker') st.trackerSessions++;
-    else st.syncSeconds += Number(s.seconds);
-    out.set(s.libraryGameId, st);
-  }
+/** Sessions per game id. */
+export function sessionCounts(
+  sessions: { libraryGameId: number }[],
+): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const s of sessions)
+    out.set(s.libraryGameId, (out.get(s.libraryGameId) ?? 0) + 1);
   return out;
 }
 
@@ -156,7 +114,10 @@ export function sessionStats(
 export function dropExactDuplicates(
   titles: ObservedTitle[],
   existing: Map<string, boolean>,
-): { kept: ObservedTitle[]; dropped: ObservedTitle[] } {
+): {
+  kept: ObservedTitle[];
+  dropped: { title: ObservedTitle; twin: ObservedTitle }[];
+} {
   const groups = new Map<string, ObservedTitle[]>();
   for (const t of titles) {
     const key = titleKey(t.title);
@@ -170,27 +131,24 @@ export function dropExactDuplicates(
       (s === true ? 4 : s === false ? 2 : 0) + (t.platform === 'ps5' ? 1 : 0)
     );
   };
-  const dropped = new Set<ObservedTitle>();
+  const dropped: { title: ObservedTitle; twin: ObservedTitle }[] = [];
   for (const g of groups.values()) {
     if (g.length < 2) continue;
-    const [, ...rest] = [...g].sort(
+    const [twin, ...rest] = [...g].sort(
       (a, b) => rank(b) - rank(a) || a.externalId.localeCompare(b.externalId),
     );
-    rest.forEach((t) => dropped.add(t));
+    for (const title of rest) dropped.push({ title, twin });
   }
-  return {
-    kept: titles.filter((t) => !dropped.has(t)),
-    dropped: [...dropped],
-  };
+  const gone = new Set(dropped.map((d) => d.title));
+  return { kept: titles.filter((t) => !gone.has(t)), dropped };
 }
 
 /**
  * What a sync of `provider` repairs before applying `titles` (keys already recomputed).
- * PSN only: platform from the title id; exact duplicates and media apps deleted. Both: a synced
- * row without legacy sessions folded into an unadopted legacy row of the same platform and
- * titleKey, else (rows with only sync sessions) into the one legacy row of the platform family
- * with a matching total (`matchLegacyByTotal`). Rows are the
- * user's; returns the titles to apply. Idempotent: on repaired rows it plans nothing.
+ * PSN only: platform from the title id; exact duplicates and media apps deleted. Both: every
+ * unadopted legacy row with a total, largest first, folds into the synced row of the same
+ * platform family `matchLegacy` picks (R1-R4). Rows are the user's; returns the titles to apply.
+ * Idempotent: on repaired rows it plans nothing.
  */
 export function planRepairs(
   provider: Provider,
@@ -200,10 +158,6 @@ export function planRepairs(
 ): { titles: ObservedTitle[]; actions: RepairAction[] } {
   const psn = provider === 'psn';
   const family: Platform[] = psn ? ['ps4', 'ps5'] : ['steam'];
-  const synced = (r: RepairRow) =>
-    !isLegacy(r) &&
-    r.totalSeconds !== null &&
-    (psn ? PSN_ID : STEAM_ID).test(r.externalId);
   const live = rows
     .filter((r) => family.includes(r.platform))
     .map((r) => ({ ...r }))
@@ -223,7 +177,7 @@ export function planRepairs(
       const into = find(platform, r.externalId);
       if (into) {
         actions.push({ kind: 'fold', dupId: r.id, intoId: into.id });
-        addStats(into, r);
+        into.sessions += r.sessions;
         remove(r);
       } else {
         actions.push({ kind: 'relabel', id: r.id, platform });
@@ -234,82 +188,70 @@ export function planRepairs(
     const d = dropExactDuplicates(
       titles,
       new Map(
-        live.map((r) => [ident(r.platform, r.externalId), hasSessions(r)]),
+        live.map((r) => [ident(r.platform, r.externalId), r.sessions > 0]),
       ),
     );
     kept = d.kept;
-    const dupes = new Set(
-      d.dropped.map((t) => ident(t.platform, t.externalId)),
+    const twins = new Map(
+      d.dropped.map((x) => [
+        ident(x.title.platform, x.title.externalId),
+        x.twin.externalId,
+      ]),
     );
     const apps = new Set(ignoredIds);
     for (const r of [...live]) {
       if (isLegacy(r)) continue;
-      const why = dupes.has(ident(r.platform, r.externalId))
+      const twin = twins.get(ident(r.platform, r.externalId));
+      const why = twin
         ? 'duplicate'
         : apps.has(r.externalId) ||
             (PSN_ID.test(r.externalId) && isKnownPsnApp(r.title))
           ? 'app'
           : undefined;
       if (!why) continue;
-      actions.push({ kind: hasSessions(r) ? 'keep' : 'delete', id: r.id, why });
+      const kind = r.sessions > 0 ? 'keep' : 'delete';
+      actions.push(
+        twin ? { kind, id: r.id, why, twin } : { kind, id: r.id, why },
+      );
       remove(r);
     }
-  }
-
-  const adopted = new Set<number>();
-  const adopt = (dup: RepairRow, legacy: RepairRow, by: 'title' | 'total') => {
-    actions.push({
-      kind: 'adopt',
-      dupId: dup.id,
-      legacyId: legacy.id,
-      platform: dup.platform,
-      externalId: dup.externalId,
-      baselinePlus: legacy.totalSeconds === null ? 0 : dup.syncSeconds,
-      by,
-    });
-    legacy.platform = dup.platform;
-    legacy.externalId = dup.externalId;
-    addStats(legacy, dup);
-    adopted.add(legacy.id);
-    remove(dup);
-  };
-
-  for (const legacy of live.filter((r) => isLegacy(r) && r.titleKey)) {
-    const [dup] = live
-      .filter(
-        (r) =>
-          synced(r) &&
-          r.legacySessions === 0 && // never fold one legacy row into another
-          !adopted.has(r.id) &&
-          r.platform === legacy.platform &&
-          r.titleKey === legacy.titleKey,
-      )
-      // Two regions: the larger total is the likelier continuation of the legacy one.
-      .sort((a, b) => (b.totalSeconds ?? 0) - (a.totalSeconds ?? 0));
-    if (dup) adopt(dup, legacy, 'title');
   }
 
   const reported = new Map(
     kept.map((t) => [ident(t.platform, t.externalId), t.totalSeconds]),
   );
-  for (const r of live.filter(
-    (x) =>
-      synced(x) &&
-      x.trackerSessions === 0 &&
-      x.legacySessions === 0 &&
-      !adopted.has(x.id),
-  )) {
-    const hits = matchLegacyByTotal(
-      r.titleKey,
-      reported.get(ident(r.platform, r.externalId)) ?? r.totalSeconds ?? 0,
-      live.filter(isLegacy),
+  const synced = live
+    .filter(
+      (r) =>
+        !isLegacy(r) &&
+        r.totalSeconds !== null &&
+        (psn ? PSN_ID : STEAM_ID).test(r.externalId),
+    )
+    .map((r) => ({
+      id: r.id,
+      platform: r.platform,
+      titleKey: r.titleKey,
+      total: reported.get(ident(r.platform, r.externalId)) ?? r.totalSeconds!,
+    }));
+  const legacies = live
+    .filter((r) => isLegacy(r) && r.totalSeconds !== null)
+    .sort((a, b) => b.totalSeconds! - a.totalSeconds! || a.id - b.id);
+  for (const l of legacies) {
+    const m = matchLegacy(
+      {
+        id: l.id,
+        platform: l.platform,
+        titleKey: l.titleKey,
+        total: l.totalSeconds!,
+      },
+      synced,
     );
-    if (hits.length === 1) adopt(r, hits[0], 'total');
-    else if (hits.length > 1)
+    if (m)
       actions.push({
-        kind: 'ambiguous',
-        id: r.id,
-        legacyIds: hits.map((h) => h.id),
+        kind: 'foldLegacy',
+        legacyId: l.id,
+        intoId: m.into.id,
+        rule: m.rule,
       });
   }
 
