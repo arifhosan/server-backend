@@ -1,18 +1,32 @@
 // Fields are filled by later tasks (detection, heartbeat sender).
 #![allow(dead_code)]
 
-use serde::Serialize;
+use crate::library::Store;
+use chrono::{DateTime, Utc};
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct RunningGame {
     /// "<store>:<store_id or folder title>"
     pub key: String,
-    pub title: String,
-    pub store: String,
+    pub store: Store,
     pub store_id: Option<String>,
+    pub title: String,
     pub exe: String,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-    pub session_seconds: u64,
+    pub started_at: DateTime<Utc>,
+}
+
+/// The UI gets title, store and the session length so far (not the other fields).
+impl Serialize for RunningGame {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut st = s.serialize_struct("RunningGame", 3)?;
+        st.serialize_field("title", &self.title)?;
+        st.serialize_field("store", self.store.as_str())?;
+        let secs = (Utc::now() - self.started_at).num_seconds().max(0);
+        st.serialize_field("session_seconds", &secs)?;
+        st.end()
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]

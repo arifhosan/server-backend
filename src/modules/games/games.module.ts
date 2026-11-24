@@ -15,6 +15,8 @@ import { LegacyImportService } from './legacy/legacy-import.service';
 import { LibraryService } from './library/library.service';
 import { TrackerController } from './tracker/tracker.controller';
 import { TrackerService } from './tracker/tracker.service';
+import { PsnClient } from './sync/psn.client';
+import { SteamClient } from './sync/steam.client';
 import { SyncService } from './sync/sync.service';
 import { loadSecretKey } from './utils/secret-box';
 
@@ -37,8 +39,13 @@ import { loadSecretKey } from './utils/secret-box';
     LibraryService,
     TrackerService,
     SyncService,
-    // Tasks 7-8 replace this with a factory returning { steam: SteamClient, psn: PsnClient }.
-    { provide: SYNC_CLIENTS, useValue: {} },
+    SteamClient,
+    PsnClient,
+    {
+      provide: SYNC_CLIENTS,
+      useFactory: (steam: SteamClient, psn: PsnClient) => ({ steam, psn }),
+      inject: [SteamClient, PsnClient],
+    },
     {
       provide: GAMES_SECRET_KEY,
       useFactory: loadSecretKey,

@@ -112,7 +112,7 @@ pub fn spawn(app: AppHandle, dir: std::path::PathBuf) {
                         .lock_ok()
                         .playing
                         .iter()
-                        .filter_map(|g| Heartbeat::new(now, &g.store, g.store_id.as_deref(), &g.title, Some(&g.exe)))
+                        .filter_map(|g| Heartbeat::new(now, g.store.as_str(), g.store_id.as_deref(), &g.title, Some(&g.exe)))
                         .collect();
                     if !hbs.is_empty() {
                         let _ = q.push(&hbs); // disk full etc.: this minute is lost, the loop must go on

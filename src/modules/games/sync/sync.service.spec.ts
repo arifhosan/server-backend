@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { DataSource, FindOperator, Repository } from 'typeorm';
 import { Connection } from '../entities/connection.entity';
 import { LibraryGame } from '../entities/library-game.entity';
@@ -10,6 +10,7 @@ import {
   ObservedTitle,
   PlatformClient,
   SecretExpiredError,
+  SyncFailedError,
 } from './platform-client';
 import { SyncService } from './sync.service';
 
@@ -171,7 +172,7 @@ describe('SyncService', () => {
 
   it('marks failing and writes nothing when the client throws', async () => {
     const c = conn();
-    fetchTitles.mockRejectedValue(new Error('boom'));
+    fetchTitles.mockRejectedValue(new SyncFailedError('boom'));
     const run = await service.syncConnection(1, now);
     expect(run.ok).toBe(false);
     expect(run.error).toBe('boom');
@@ -179,6 +180,58 @@ describe('SyncService', () => {
     expect(c.lastError).toBe('boom');
     expect(sessions).toHaveLength(0);
     expect(games).toHaveLength(0);
+  });
+
+  it('refuses to sync a disabled connection and leaves it untouched', async () => {
+    const c = conn({ status: 'disabled' });
+    await expect(service.syncConnection(1, now)).rejects.toThrow(
+      new ConflictException('Connection is disabled'),
+    );
+    expect(c.status).toBe('disabled');
+    expect(runs).toHaveLength(0);
+    expect(fetchTitles).not.toHaveBeenCalled();
+  });
+
+  it('keeps raw client error text out of lastError and logs', async () => {
+    const c = conn();
+    const spies = (['warn', 'error', 'log'] as const).map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+    fetchTitles.mockRejectedValue(new Error('token=abc123'));
+    const run = await service.syncConnection(1, now);
+    expect(c.lastError).toBe('Unexpected error from steam');
+    expect(run.error).toBe('Unexpected error from steam');
+    expect(JSON.stringify(spies.flatMap((s) => s.mock.calls))).not.toContain(
+      'abc123',
+    );
+    expect(run.gameCount).toBeNull();
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('still propagates the run when failure bookkeeping throws', async () => {
+    conn();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    fetchTitles.mockRejectedValue(new SyncFailedError('x'));
+    const repo = (service as unknown as { connections: { update: jest.Mock } })
+      .connections;
+    repo.update = jest.fn().mockRejectedValue(new Error('db down'));
+    await expect(service.syncConnection(1, now)).resolves.toBeDefined();
+    jest.restoreAllMocks();
+  });
+
+  it('syncAll still syncs when the prune throws', async () => {
+    const c = conn();
+    const old = c.lastSuccessAt;
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    (service as unknown as { runs: { delete: jest.Mock } }).runs.delete = jest
+      .fn()
+      .mockRejectedValue(new Error('nope'));
+    fetchTitles.mockResolvedValue({ titles: [steamTitle()] });
+    await service.syncAll();
+    expect(c.lastSuccessAt).not.toEqual(old);
+    expect(runs).toHaveLength(1);
+    jest.restoreAllMocks();
   });
 
   it('treats zero games after a non-empty library as failing', async () => {
@@ -195,10 +248,11 @@ describe('SyncService', () => {
     const a = conn({ id: 1, provider: 'psn' });
     const b = conn({ id: 2 });
     fetchTitles
-      .mockRejectedValueOnce(new SecretExpiredError())
+      .mockRejectedValueOnce(new SecretExpiredError('Re-enter NPSSO'))
       .mockResolvedValueOnce({ titles: [steamTitle()] });
     await service.syncAll();
     expect(a.status).toBe('expired');
+    expect(a.lastError).toBe('Re-enter NPSSO');
     expect(b.status).toBe('ok');
     expect(runs.map((r) => r.ok)).toEqual([false, true]);
   });

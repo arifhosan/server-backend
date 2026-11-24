@@ -54,9 +54,13 @@ export class SyncService {
 
   @Cron('0 5 * * * *')
   async syncAll(): Promise<void> {
-    await this.runs.delete({
-      startedAt: LessThan(new Date(Date.now() - RUN_RETENTION_MS)),
-    });
+    try {
+      await this.runs.delete({
+        startedAt: LessThan(new Date(Date.now() - RUN_RETENTION_MS)),
+      });
+    } catch (e) {
+      this.logger.warn(`sync_run prune failed: ${(e as Error).name}`);
+    }
     const conns = await this.connections.find({
       where: { status: Not('disabled') },
     });
@@ -64,6 +68,7 @@ export class SyncService {
       try {
         await this.syncConnection(c.id);
       } catch (e) {
+        // Only HttpExceptions (lock/disabled/not found) reach here; their text is fixed.
         this.logger.warn(`sync ${c.id} skipped: ${(e as Error).message}`);
       }
     }
@@ -73,12 +78,14 @@ export class SyncService {
     connectionId: number,
     now: Date = new Date(),
   ): Promise<SyncRun> {
+    const conn = await this.connections.findOneBy({ id: connectionId });
+    if (!conn) throw new NotFoundException('Connection not found');
+    if (conn.status === 'disabled')
+      throw new ConflictException('Connection is disabled');
     if (this.running.has(connectionId))
       throw new ConflictException('Sync already running');
     this.running.add(connectionId);
     try {
-      const conn = await this.connections.findOneBy({ id: connectionId });
-      if (!conn) throw new NotFoundException('Connection not found');
       const run = await this.runs.save(
         this.runs.create({
           connectionId,
@@ -123,10 +130,6 @@ export class SyncService {
       client.statusAfter?.(conn.secretExpiresAt, now) ?? 'ok';
     await this.dataSource.transaction(async (m) => {
       for (const t of res.titles) await this.applyTitle(m, conn, t, now);
-      run.ok = true;
-      run.gameCount = res.titles.length;
-      run.finishedAt = new Date();
-      await m.getRepository(SyncRun).save(run);
       await m.getRepository(Connection).update(conn.id, {
         status,
         lastSyncAt: now,
@@ -135,6 +138,16 @@ export class SyncService {
         lastGameCount: res.titles.length,
       });
     });
+    run.ok = true;
+    run.gameCount = res.titles.length;
+    run.finishedAt = new Date();
+    try {
+      await this.runs.save(run);
+    } catch (e) {
+      this.logger.warn(
+        `sync ${conn.id} run record not saved: ${(e as Error).name}`,
+      );
+    }
   }
 
   private async applyTitle(
@@ -187,16 +200,30 @@ export class SyncService {
     e: unknown,
     now: Date,
   ): Promise<void> {
-    const message = ((e as Error)?.message ?? String(e)).slice(0, 500);
-    this.logger.warn(`sync ${conn.id} failed: ${message}`);
-    run.ok = false;
-    run.error = message;
-    run.finishedAt = new Date();
-    await this.runs.save(run);
-    await this.connections.update(conn.id, {
-      status: e instanceof SecretExpiredError ? 'expired' : 'failing',
-      lastSyncAt: now,
-      lastError: message,
-    });
+    const expired = e instanceof SecretExpiredError;
+    // Only SyncFailedError text is known to be free of secrets.
+    const message =
+      e instanceof SyncFailedError || expired
+        ? e.message.slice(0, 500)
+        : `Unexpected error from ${conn.provider}`;
+    this.logger.warn(
+      `sync ${conn.id} failed: ${e instanceof Error ? e.name : 'non-Error'}: ${message}`,
+    );
+    try {
+      run.ok = false;
+      run.gameCount = null;
+      run.error = message;
+      run.finishedAt = new Date();
+      await this.runs.save(run);
+      await this.connections.update(conn.id, {
+        status: expired ? 'expired' : 'failing',
+        lastSyncAt: now,
+        lastError: message,
+      });
+    } catch (e2) {
+      this.logger.error(
+        `sync ${conn.id} failure bookkeeping failed: ${e2 instanceof Error ? e2.name : 'non-Error'}`,
+      );
+    }
   }
 }

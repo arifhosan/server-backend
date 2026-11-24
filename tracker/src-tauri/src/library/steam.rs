@@ -1,4 +1,4 @@
-use super::{file_name, InstalledGame, Store};
+use super::{file_name, norm, InstalledGame, Store};
 use std::path::{Path, PathBuf};
 
 /// The two quoted strings of a `"key"<ws>"value"` line, `\\` and `\"` unescaped.
@@ -43,11 +43,16 @@ pub fn library_paths(vdf: &str) -> Vec<PathBuf> {
 
 pub fn parse_manifest(acf: &str, library: &Path) -> Option<InstalledGame> {
     let first = |k| all_kv(acf, k).into_iter().next();
+    let (id, dir) = (first("appid")?, first("installdir")?);
+    // 228980 = Steamworks Common Redistributables
+    if dir.trim().is_empty() || id == "228980" {
+        return None;
+    }
     Some(InstalledGame {
         store: Store::Steam,
-        store_id: Some(first("appid")?),
+        store_id: Some(id),
         title: first("name")?,
-        install_dir: library.join("steamapps").join("common").join(first("installdir")?),
+        install_dir: library.join("steamapps").join("common").join(dir),
         logo: None,
     })
 }
@@ -57,7 +62,7 @@ pub fn scan(steam: Option<&Path>) -> Vec<InstalledGame> {
     let mut libs = vec![root.to_path_buf()];
     if let Ok(vdf) = std::fs::read_to_string(root.join("steamapps/libraryfolders.vdf")) {
         for p in library_paths(&vdf) {
-            if !libs.contains(&p) {
+            if !libs.iter().any(|l| norm(l) == norm(&p)) {
                 libs.push(p);
             }
         }
@@ -74,6 +79,7 @@ pub fn scan(steam: Option<&Path>) -> Vec<InstalledGame> {
             })
             .collect();
         files.sort();
+        // non-UTF-8 files fail read_to_string and are skipped
         out.extend(
             files
                 .iter()
@@ -106,6 +112,30 @@ mod tests {
         assert_eq!(g.store_id.as_deref(), Some("1091500"));
         assert_eq!(g.title, "Cyberpunk 2077");
         assert_eq!(g.install_dir, Path::new("D:/SteamLibrary/steamapps/common/Cyberpunk 2077"));
+    }
+
+    #[test]
+    fn redist_and_empty_installdir_skipped() {
+        let acf = |id: &str, dir: &str| format!("\"AppState\"\n{{\n\"appid\" \"{id}\"\n\"name\" \"X\"\n\"installdir\" \"{dir}\"\n}}");
+        assert!(parse_manifest(&acf("228980", "Steamworks Shared"), Path::new("D:/x")).is_none());
+        assert!(parse_manifest(&acf("5", ""), Path::new("D:/x")).is_none());
+    }
+
+    #[test]
+    fn duplicate_library_and_non_utf8_skipped() {
+        let tmp = std::env::temp_dir().join(format!("gt-steam-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let apps = tmp.join("Steam/steamapps");
+        std::fs::create_dir_all(&apps).unwrap();
+        let real = tmp.join("Steam").to_string_lossy().replace('\\', "\\\\");
+        std::fs::write(apps.join("libraryfolders.vdf"), format!("\"libraryfolders\"\n{{\n\"0\"\n{{\n\"path\" \"{real}\"\n}}\n}}\n")).unwrap();
+        std::fs::copy(super::super::tests::fixtures().join("steam/appmanifest_1091500.acf"), apps.join("appmanifest_1091500.acf")).unwrap();
+        std::fs::write(apps.join("appmanifest_9.acf"), [0xff, 0xfe, 0x00, 0xc3]).unwrap();
+        // registry-style root: forward slashes, lowercase, trailing slash
+        let reg = PathBuf::from(format!("{}/", tmp.join("Steam").to_string_lossy().replace('\\', "/").to_lowercase()));
+        let n = scan(Some(&reg)).len();
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(n, 1);
     }
 
     #[test]

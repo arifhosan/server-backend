@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod api;
+mod detect;
 mod library;
 mod queue;
 mod sender;
@@ -10,8 +11,9 @@ mod token;
 
 use serde::Serialize;
 use settings::{config_dir, dashboard_url, Settings};
-use state::{AppState, Connection};
+use state::{AppState, Connection, RunningGame};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -167,6 +169,48 @@ fn open_dashboard(app: AppHandle, path: String) -> Res {
     app.opener().open_url(format!("{base}{path}"), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Every 15 s (skipped while paused): running exes -> matched games -> `AppState.playing`. Index rebuilt every 10 min.
+fn start_detection(app: AppHandle) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    std::thread::spawn(move || {
+        let Ok(mut sys) = System::new() else { return };
+        let mut index = Vec::new();
+        let mut indexed_at: Option<Instant> = None;
+        loop {
+            if indexed_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)) {
+                index = library::build_index(&library::Roots::detect());
+                indexed_at = Some(Instant::now());
+            }
+            let shared = app.state::<Shared>();
+            if !shared.state.lock_ok().paused {
+                sys.refresh_processes_specifics(
+                    ProcessesToUpdate::All,
+                    true,
+                    ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+                );
+                let exes: Vec<_> = sys.processes().values().filter_map(|p| p.exe().map(|e| e.to_path_buf())).collect();
+                let ignored = shared.settings.lock_ok().ignored.clone();
+                let found = detect::match_running(&index, &exes, &ignored);
+                {
+                    let mut st = shared.state.lock_ok();
+                    let now = chrono::Utc::now();
+                    let playing = found
+                        .into_iter()
+                        .map(|(g, exe)| {
+                            let key = format!("{}:{}", g.store.as_str(), g.store_id.as_deref().unwrap_or(&g.title));
+                            let started_at = st.playing.iter().find(|r| r.key == key).map_or(now, |r| r.started_at);
+                            RunningGame { key, store: g.store, store_id: g.store_id, title: g.title, exe, started_at }
+                        })
+                        .collect();
+                    st.playing = playing;
+                }
+                publish(&app);
+            }
+            std::thread::sleep(Duration::from_secs(15));
+        }
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -229,6 +273,8 @@ fn main() {
                 })
                 .build(app)?;
             app.manage(Tray { icon, pause });
+
+            start_detection(app.handle().clone());
 
             // Autostarted launches stay in the tray; a manual launch opens the window.
             if !std::env::args().any(|a| a == "--autostart") {
