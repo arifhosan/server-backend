@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Connection } from '../entities/connection.entity';
 import {
@@ -29,9 +30,11 @@ export function parseSteamProfileInput(
 
 @Injectable()
 export class SteamClient implements PlatformClient {
+  constructor(private readonly config: ConfigService) {}
+
   /** Never put the URL, the axios message or the key into an error: the key is in the query string. */
   private async call<T>(path: string, params: object): Promise<T> {
-    const key = process.env.STEAM_API_KEY;
+    const key = this.config.get<string>('STEAM_API_KEY');
     if (!key) throw new SyncFailedError('STEAM_API_KEY is not set');
     try {
       const res = await axios.get<T>(`${BASE}/${path}`, {
@@ -73,6 +76,7 @@ export class SteamClient implements PlatformClient {
   async fetchTitles(conn: Connection): Promise<{ titles: ObservedTitle[] }> {
     const d = await this.call<{
       response?: {
+        game_count?: number;
         games?: {
           appid: number;
           name: string;
@@ -85,10 +89,12 @@ export class SteamClient implements PlatformClient {
       include_appinfo: 1,
       include_played_free_games: 1,
     });
-    // Private "Game details" returns an empty response object.
-    if (!d.response?.games) throw new SteamPrivateProfileError();
+    // Private "Game details" returns an empty response object; a public empty library has game_count 0.
+    const games =
+      d.response?.games ?? (d.response?.game_count === 0 ? [] : undefined);
+    if (!games) throw new SteamPrivateProfileError();
     return {
-      titles: d.response.games.map((g) => ({
+      titles: games.map((g) => ({
         platform: 'steam',
         externalId: String(g.appid),
         title: g.name,

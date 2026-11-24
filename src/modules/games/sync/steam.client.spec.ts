@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Connection } from '../entities/connection.entity';
 import { SyncFailedError } from './platform-client';
@@ -30,10 +31,10 @@ describe('SteamClient', () => {
   let client: SteamClient;
   beforeEach(() => {
     get.mockReset();
-    process.env.STEAM_API_KEY = 'SECRETKEY';
-    client = new SteamClient();
+    client = new SteamClient({
+      get: () => 'SECRETKEY',
+    } as unknown as ConfigService);
   });
-  afterEach(() => delete process.env.STEAM_API_KEY);
 
   it('maps owned games', async () => {
     get.mockResolvedValue({
@@ -69,6 +70,11 @@ describe('SteamClient', () => {
     );
   });
 
+  it('treats game_count 0 as an empty library', async () => {
+    get.mockResolvedValue({ data: { response: { game_count: 0 } } });
+    await expect(client.fetchTitles(conn)).resolves.toEqual({ titles: [] });
+  });
+
   it('reports HTTP errors without leaking the key', async () => {
     get.mockRejectedValue(
       Object.assign(new Error('failed key=SECRETKEY'), {
@@ -90,7 +96,9 @@ describe('SteamClient', () => {
   });
 
   it('fails when the key is missing', async () => {
-    delete process.env.STEAM_API_KEY;
+    client = new SteamClient({
+      get: () => undefined,
+    } as unknown as ConfigService);
     await expect(client.fetchTitles(conn)).rejects.toThrow(
       'STEAM_API_KEY is not set',
     );
