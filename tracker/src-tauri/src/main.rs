@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod api;
 mod detect;
 mod library;
+mod queue;
+mod sender;
 mod settings;
 mod state;
 mod token;
@@ -133,6 +136,7 @@ fn set_token(app: AppHandle, token: String) -> Res {
     token::set(t).map_err(|e| e.to_string())?;
     app.state::<Shared>().state.lock_ok().connection = Connection::Ok { last_sent_at: None };
     publish(&app);
+    let _ = app.state::<sender::Wake>().0.send(());
     Ok(())
 }
 
@@ -236,6 +240,8 @@ fn main() {
                 state: Mutex::new(AppState::new(token::get().is_some(), paused)),
                 settings: Mutex::new(settings),
             });
+
+            sender::spawn(app.handle().clone(), config_dir());
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", if paused { "Resume" } else { "Pause" }, true, None::<&str>)?;
