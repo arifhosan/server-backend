@@ -90,6 +90,7 @@ export class ConnectionsService {
     try {
       res = await this.psn.connect(npsso);
     } catch {
+      // By design every connect failure (bad token, PSN down) is this one 400.
       throw new BadRequestException(
         'PSN rejected this token. Copy a fresh one and try again.',
       );
@@ -109,6 +110,7 @@ export class ConnectionsService {
 
   async remove(userId: number, provider: Provider): Promise<void> {
     const conn = await this.owned(userId, provider);
+    // sync_run rows stay: no FK, and the 90-day prune removes them.
     await this.connections.delete(conn.id);
   }
 
