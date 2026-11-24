@@ -64,6 +64,9 @@ describe('AuthService', () => {
 
       await service.register(dto);
 
+      expect(userRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ timezone: 'Europe/Berlin' }),
+      );
       const [created] = userRepo.create.mock.calls[0];
       const hash = created.password ?? '';
       expect(hash).not.toBe(dto.password);

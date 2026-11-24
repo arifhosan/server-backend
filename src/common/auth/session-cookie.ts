@@ -9,5 +9,10 @@ export function readSessionCookie(
     ?.split(';')
     .map((c) => c.trim())
     .find((c) => c.startsWith(prefix));
-  return part ? decodeURIComponent(part.slice(prefix.length)) : null;
+  if (!part) return null;
+  try {
+    return decodeURIComponent(part.slice(prefix.length));
+  } catch {
+    return null; // malformed escape: treat as no cookie, not a 500
+  }
 }

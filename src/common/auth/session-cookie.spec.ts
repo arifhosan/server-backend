@@ -10,6 +10,11 @@ describe('readSessionCookie', () => {
     expect(readSessionCookie(undefined)).toBeNull();
   });
 
+  it('returns null on a malformed escape', () => {
+    expect(readSessionCookie('session=%')).toBeNull();
+    expect(readSessionCookie('session=%E0%A4%A')).toBeNull();
+  });
+
   it('decodes the value', () => {
     expect(readSessionCookie('session=a%2Eb')).toBe('a.b');
   });
